@@ -1,0 +1,30 @@
+/**
+ * @file 全局样式
+ * @description 全站基础排版与纸面气质底色，仅在 main.ts 中引入一次。
+ *              注意：设计变量已由 vite additionalData 自动注入，此处无需 @use。
+ */
+
+// 统一盒模型，避免边框/内边距把布局尺寸撑爆
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+// 清空默认外边距，交给各页面自行控制留白
+body {
+  margin: 0;
+  // 纸浆底色铺满全站，营造纸面氛围
+  background-color: $paper-base;
+  color: $ink;
+  font-family: $font-serif;
+  font-weight: $weight-normal;
+  // 开启抗锯齿，让小字号在纸色背景上更清晰柔和
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+// 应用根节点撑满视口，供工作台左右分栏布局使用
+#app {
+  height: 100vh;
+}

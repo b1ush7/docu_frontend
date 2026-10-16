@@ -1,0 +1,88 @@
+/**
+ * @file 设计变量
+ * @description 全局颜色 / 字体 / 字重 / 圆角 / 间距变量。
+ *              通过 vite additionalData 自动注入所有组件的 scss 样式块，
+ *              组件内直接使用 $变量名 即可，禁止在组件内硬编码魔法值。
+ *              新增变量请先在本文件登记。
+ */
+
+// ---------- 色板（克制的墨色系，禁用 #1890ff 等通用 UI 色） ----------
+/// 墨色：正文与描边
+$ink: #2b2b2b;
+/// 次级色：说明文字 / 占位符
+$ink-soft: #6b6b6b;
+/// 分割线 / 输入框与按钮的默认边框
+$line: #d8d2c4;
+/// 纸浆底色（页面底色）
+$paper-base: #f3eee3;
+/// 卡片面：比底色略亮一档，用于表单卡片与输入框内里
+$paper-surface: #fbf8f0;
+/// 强调色：低饱和深墨蓝，仅用于按钮底或激活态，全局克制出现
+$accent: #1f2a44;
+/// 强调色 hover：在 $accent 基础上略提亮一档
+$accent-hover: #2a3a5c;
+
+// ---------- 字体 ----------
+/// 全站中文字体【开关】：只需改下面【激活行】即可切换字体，
+/// 其余预设以注释形式保留，需要回退时直接复制粘贴覆盖即可。
+///   · 思源宋体：'Noto Serif SC'（当前设计原始字体，最贴合纸面气质）
+///   · 思源黑体：'Noto Sans SC'（跨平台兼容性最好）
+///   · 苹方    ：'PingFang SC'（仅 macOS/iOS 系统自带）
+$font-serif: 'Noto Serif SC', 'Songti SC', 'SimSun', Georgia, serif;
+// $font-serif: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+
+// ---------- 字重 ----------
+/// 正文 / 输入框 / 按钮
+$weight-normal: 400;
+/// 标题 / 品牌名
+$weight-medium: 500;
+/// 极少数强调
+$weight-semibold: 600;
+
+// ---------- 字号 ----------
+/// 正文字号（列表项、说明段落等）
+$font-size-body: 14px;
+/// 辅助信息 / 次级说明字号
+$font-size-caption: 12px;
+/// 区块标题字号
+$font-size-title: 16px;
+
+// ---------- 圆角与边框 ----------
+/// 全站统一小圆角（克制，不做大圆角）
+$radius: 4px;
+/// 输入框 / 按钮边框宽度
+$border-w: 1px;
+
+// ---------- 间距 ----------
+/// 表单元素纵向间距（规范 20~24px，取中值）
+$form-gap: 22px;
+/// 卡片内边距
+$card-padding: 48px;
+
+// ---------- 控件（表单类组件共用，新增先登记） ----------
+/// 输入框 / 按钮统一高度
+$control-height: 37px;
+/// 输入控件纵向内边距
+$input-padding-y: 10px;
+/// 输入控件横向内边距
+$input-padding-x: 12px;
+/// 微间距：错误提示与控件的间距等
+$gap-xs: 4px;
+/// 小间距：图标与文字、行内元素间距
+$gap-sm: 8px;
+/// 禁用态统一透明度
+$disabled-opacity: 0.55;
+
+// ---------- 布局（工作台页面，新增布局参数统一登记于此） ----------
+/// 侧边栏默认宽度
+$sidebar-width: 320px;
+/// 侧边栏可拖拽的最小宽度
+$sidebar-min-width: 260px;
+/// 侧边栏可拖拽的最大宽度
+$sidebar-max-width: 480px;
+/// 左右面板拖拽分隔条宽度
+$resizer-size: 6px;
+
+// ---------- 动效 ----------
+/// 统一短过渡（Tab 切换 / 边框聚焦 / hover 等交互反馈）
+$transition-fast: 0.2s ease;
