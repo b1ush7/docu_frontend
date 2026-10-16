@@ -1,7 +1,7 @@
 /**
  * @file 路由配置
- * @description /login、/register、/reset-password 与 / 四个路由；全局前置守卫基于 localStorage 中的
- *              登录凭证做最外层拦截（避免在模块加载期引入 Pinia 循环依赖）：
+ * @description /login、/register、/reset-password、/change-password 与 / 五个路由；全局前置守卫基于
+ *              localStorage 中的登录凭证做最外层拦截（避免在模块加载期引入 Pinia 循环依赖）：
  *              · 未登录访问需认证页面 → 重定向 /login；
  *              · 已登录访问 /login、/register 或 /reset-password → 重定向 /。
  */
@@ -30,6 +30,13 @@ const router = createRouter({
       name: 'ResetPassword',
       component: () => import('@/views/ResetPasswordView.vue'),
       meta: { requiresAuth: false },
+    },
+    {
+      // 修改密码页（P4）：需登录；成功后服务端撤销全部会话，页面自行清 Token 跳登录
+      path: '/change-password',
+      name: 'ChangePassword',
+      component: () => import('@/views/ChangePasswordView.vue'),
+      meta: { requiresAuth: true },
     },
     {
       path: '/',

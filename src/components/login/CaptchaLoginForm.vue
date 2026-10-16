@@ -11,7 +11,7 @@
  *                · 提交复用 LoginButton（墨底纸字）。
  *
  *              错误提示（Step 9）：
- *                · 手机号格式错误、验证码非 6 位、发送验证码失败三种场景，
+ *                · 手机号格式错误、验证码非 4-8 位、发送验证码失败三种场景，
  *                  在对应字段【正下方间隙内】显示 12px 墨色宋体内联文案，
  *                  不弹窗、不使用红色等通用 UI 色；
  *                · 提示绝对定位，不挤压三框布局；在出错字段重新输入后自动清除。
@@ -19,7 +19,7 @@
  *              行为：
  *                · 手机号、验证码均为受控值；提交时做【本地校验】：
  *                  - 手机号符合 /^1[3-9]\d{9}$/；
- *                  - 验证码为 6 位数字；
+ *                  - 验证码为 4-8 位数字；
  *                  校验不通过时不 emit('submit')。
  *                · 点击「获取验证码」的手机号校验由 CaptchaInput 内部完成，
  *                  失败时 emit('error')，本组件捕获后显示在手机号框下方。
@@ -35,7 +35,7 @@ import { ref } from 'vue'
 
 import CaptchaInput from '@/components/login/CaptchaInput.vue'
 import LoginButton from '@/components/login/LoginButton.vue'
-import { isValidPhone, PHONE_ERROR_MESSAGE } from '@/utils/validate'
+import { isValidCaptchaCode, isValidPhone, CODE_ERROR_MESSAGE, PHONE_ERROR_MESSAGE } from '@/utils/validate'
 
 interface Props {
   /** 登录请求进行中：禁用所有输入与按钮 */
@@ -126,8 +126,8 @@ function handleSubmit(): void {
     showError('phone', PHONE_ERROR_MESSAGE)
     return
   }
-  if (code.value.length !== 6) {
-    showError('code', '请输入 6 位验证码')
+  if (!isValidCaptchaCode(code.value)) {
+    showError('code', CODE_ERROR_MESSAGE)
     return
   }
   emit('submit', { phone: phoneValue, code: code.value })

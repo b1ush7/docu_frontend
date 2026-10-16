@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * @file CaptchaInput.vue
- * @description 验证码输入组件（手写，无 UI 库）：左侧 6 位验证码输入框 +
+ * @description 验证码输入组件（手写，无 UI 库）：左侧 4~8 位验证码输入框 +
  *              右侧「获取验证码 / 重新获取(60s)」倒计时按钮，共处一个
  *              305×37 墨线边框容器内，聚焦验证码输入框时整框边框转墨色
  *              （点击右侧按钮不会让边框保持墨色）。
@@ -80,11 +80,11 @@ const buttonText = computed(() => {
   return '获取验证码'
 })
 
-/** 输入事件：透传验证码（限制为数字，最多 6 位） */
+/** 输入事件：透传验证码（限制为数字，最多 8 位） */
 function onInput(event: Event): void {
   const target = event.target as HTMLInputElement
-  // 仅保留数字并截断 6 位，避免写入非数字字符
-  emit('update:modelValue', target.value.replace(/\D/g, '').slice(0, 6))
+  // 仅保留数字并截断 8 位，避免写入非数字字符
+  emit('update:modelValue', target.value.replace(/\D/g, '').slice(0, 8))
 }
 
 /**
@@ -126,12 +126,12 @@ async function handleRequest(): Promise<void> {
       'captcha-input--focus': fieldFocused,
     }"
   >
-    <!-- 验证码输入：去边框，融入外框；数字输入，最大 6 位 -->
+    <!-- 验证码输入：去边框，融入外框；数字输入，最大 8 位 -->
     <input
       class="captcha-input__field"
       type="text"
       inputmode="numeric"
-      maxlength="6"
+      maxlength="8"
       autocomplete="one-time-code"
       :value="modelValue"
       :disabled="disabled"

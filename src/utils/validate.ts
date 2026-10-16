@@ -22,6 +22,10 @@ export const USERNAME_REGEX = /^[A-Za-z0-9_]{4,20}$/
 export const PASSWORD_MIN_LENGTH = 8
 export const PASSWORD_MAX_LENGTH = 64
 
+/** 验证码位数区间（API 文档 §2.3/§2.6/§2.8：验证码为 4~8 位数字） */
+export const CODE_MIN_LENGTH = 4
+export const CODE_MAX_LENGTH = 8
+
 /** 手机号校验失败文案（用于页面内联错误提示） */
 export const PHONE_ERROR_MESSAGE = '请输入正确的手机号'
 /** 用户名为空时的文案 */
@@ -30,8 +34,14 @@ export const USERNAME_REQUIRED_MESSAGE = '请输入用户名'
 export const USERNAME_ERROR_MESSAGE = '用户名需 4-20 位，仅字母、数字或下划线'
 /** 登录密码为空时的文案 */
 export const PASSWORD_REQUIRED_MESSAGE = '请输入密码'
+/** 修改密码页旧密码为空时的文案 */
+export const OLD_PASSWORD_REQUIRED_MESSAGE = '请输入旧密码'
+/** 修改密码页新密码为空时的文案 */
+export const NEW_PASSWORD_REQUIRED_MESSAGE = '请输入新密码'
 /** 注册密码长度不符时的文案 */
 export const PASSWORD_LENGTH_ERROR_MESSAGE = '密码需 8-64 位'
+/** 验证码位数不符时的文案 */
+export const CODE_ERROR_MESSAGE = '请输入 4-8 位验证码'
 
 /**
  * 校验手机号是否合法
@@ -70,4 +80,14 @@ export function isValidRegisterPassword(password: string): boolean {
   return (
     password.length >= PASSWORD_MIN_LENGTH && password.length <= PASSWORD_MAX_LENGTH
   )
+}
+
+/**
+ * 校验验证码位数是否合法（API 文档：4~8 位数字）
+ * @description 输入层已由 CaptchaInput 过滤非数字，此处仅校验位数区间。
+ * @param code 待校验验证码字符串
+ * @returns 位数在 4~8 之间返回 true
+ */
+export function isValidCaptchaCode(code: string): boolean {
+  return code.length >= CODE_MIN_LENGTH && code.length <= CODE_MAX_LENGTH
 }

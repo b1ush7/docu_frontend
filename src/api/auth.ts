@@ -160,6 +160,28 @@ export function refreshToken(refreshToken: string): Promise<ApiResponse<TokenPai
   return http.post('/user/refresh', { refreshToken }, { _skipAuthRefresh: true })
 }
 
+/** 修改密码请求体（P4，需登录） */
+export interface ChangePasswordParams {
+  /** 旧密码（必填） */
+  oldPassword: string
+  /** 新密码：8-64 位 */
+  newPassword: string
+}
+
+/**
+ * 修改密码
+ * POST /user/change-password（P4，需登录）
+ * @description oldPassword 必填；newPassword 必填且 8-64 位。
+ *              **成功后服务端撤销包括当前设备在内的全部会话**，前端收到成功响应后
+ *              必须清空本地 Token 并跳转登录页。错误：400 原密码不正确；401 未登录。
+ *              需登录接口不设 _skipAuthRefresh：401 时走统一 Token 刷新流程。
+ */
+export function changePassword(
+  params: ChangePasswordParams,
+): Promise<ApiResponse<null>> {
+  return http.post('/user/change-password', params)
+}
+
 /**
  * 获取当前登录用户信息
  * GET /user/me
@@ -171,8 +193,9 @@ export function getCurrentUser(): Promise<ApiResponse<UserInfo>> {
 /**
  * 退出当前设备
  * POST /user/logout
+ * @description 请求体为空。当前成功响应 msg 为空，提示文字位于 data（如「登出成功」）。
  */
-export function logout(): Promise<ApiResponse<null>> {
+export function logout(): Promise<ApiResponse<string>> {
   return http.post('/user/logout', null, { _skipAuthRefresh: true })
 }
 

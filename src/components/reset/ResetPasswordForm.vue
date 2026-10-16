@@ -19,7 +19,7 @@
  *              行为（依文档 P3）：
  *                · 各字段受控；提交时本地校验：
  *                  - 手机号符合 /^1[3-9]\d{9}$/；
- *                  - 验证码为 6 位数字；
+ *                  - 验证码为 4-8 位数字；
  *                  - 新密码非空且 8-64 位（P3 未另列长度，沿用 P2 注册密码规则）；
  *                · 发送验证码 → 调用父级注入的 requestCode(phone)（→ POST /user/reset-password/code）；
  *                · 重设提交 → emit('submit', { phone, code, newPassword })，由父级接入 api；
@@ -33,8 +33,10 @@ import CaptchaInput from '@/components/login/CaptchaInput.vue'
 import PasswordInput from '@/components/login/PasswordInput.vue'
 import LoginButton from '@/components/login/LoginButton.vue'
 import {
+  isValidCaptchaCode,
   isValidPhone,
   isValidRegisterPassword,
+  CODE_ERROR_MESSAGE,
   PASSWORD_LENGTH_ERROR_MESSAGE,
   PASSWORD_REQUIRED_MESSAGE,
   PHONE_ERROR_MESSAGE,
@@ -141,8 +143,8 @@ function handleSubmit(): void {
     return
   }
 
-  if (code.value.length !== 6) {
-    showError('code', '请输入 6 位验证码')
+  if (!isValidCaptchaCode(code.value)) {
+    showError('code', CODE_ERROR_MESSAGE)
     return
   }
 

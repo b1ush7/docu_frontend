@@ -7,7 +7,8 @@
 export interface UserInfo {
   id: number
   username: string
-  phone: string
+  // 未绑定手机号时为 null（API 文档 §6.1：phone | string/null）
+  phone: string | null
   role: string
   status: string
   // DECIMAL(20,6)：JSON 里可能是数字或字符串，按字符串处理再格式化（联调文档 §6.4）

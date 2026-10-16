@@ -22,7 +22,7 @@
  *                · 各字段受控；提交时本地校验：
  *                  - 用户名非空且符合 /^[A-Za-z0-9_]{4,20}$/；
  *                  - 手机号符合 /^1[3-9]\d{9}$/（必填）；
- *                  - 验证码为 6 位数字；
+ *                  - 验证码为 4-8 位数字；
  *                  - 密码非空且 8-64 位；
  *                · 发送验证码 → 调用父级注入的 requestCode(phone)（→ POST /user/register/code）；
  *                · 注册提交 → emit('submit', { username, phone, code, password })，由父级接入 api；
@@ -36,9 +36,11 @@ import CaptchaInput from '@/components/login/CaptchaInput.vue'
 import PasswordInput from '@/components/login/PasswordInput.vue'
 import LoginButton from '@/components/login/LoginButton.vue'
 import {
+  isValidCaptchaCode,
   isValidPhone,
   isValidRegisterPassword,
   isValidUsername,
+  CODE_ERROR_MESSAGE,
   PASSWORD_LENGTH_ERROR_MESSAGE,
   PASSWORD_REQUIRED_MESSAGE,
   PHONE_ERROR_MESSAGE,
@@ -167,8 +169,8 @@ function handleSubmit(): void {
     return
   }
 
-  if (code.value.length !== 6) {
-    showError('code', '请输入 6 位验证码')
+  if (!isValidCaptchaCode(code.value)) {
+    showError('code', CODE_ERROR_MESSAGE)
     return
   }
 
