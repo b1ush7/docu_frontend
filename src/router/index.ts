@@ -1,26 +1,32 @@
 /**
- * @file 路由配置（合并 feature-login 认证页与管理端后台）
- * @description
- *  · 认证页：/login、/register、/reset-password、/change-password（来自 feature-login，手写组件）；
- *  · 普通用户首页：/（HomeView 占位页）；
- *  · 管理端：/admin/**（AdminLayout + 概览/用户/文件/任务，Element Plus）。
- * 全局前置守卫基于 stores/user.ts 的登录凭证做最外层拦截：
- *  · 未登录访问需认证页面 → 重定向 /login（带 redirect 参数）；
- *  · 已登录访问 /login、/register、/reset-password → 重定向 /；
- *  · /admin/** 额外要求 ADMIN 角色，用户信息缺失时补拉 /user/me。
+ * @file 路由配置
+ * @description 应用路由表与全局鉴权守卫，承载三个功能域：
+ *              - 用户端：/ 登录后的主工作台（WorkspaceView）；
+ *              - 认证页：/login、/register、/reset-password、/change-password；
+ *              - 管理端：/admin/**（AdminLayout + 概览/用户/文件/任务，要求 ADMIN 角色）。
+ *              守卫职责：
+ *              - 未登录访问受保护页面 → 重定向登录页并记录回跳地址；
+ *              - 已登录访问认证页 → 回首页；
+ *              - /admin/** 额外校验 ADMIN 角色，用户信息缺失时补拉 /user/me；
+ *              - 注册 401 兜底回调：请求层 Token 刷新失败时跳转登录页。
  */
 import { createRouter, createWebHistory } from 'vue-router'
 import { ElMessage } from 'element-plus'
 
 import { getCurrentUser } from '@/api/auth'
+import { setUnauthorizedHandler } from '@/api/http'
 import { PREVIEW_MODE, PREVIEW_USER } from '@/utils/preview'
 import type { UserInfo } from '@/types/user'
 import { useUserStore } from '@/stores/user'
 
+// 扩展路由 meta 类型，声明鉴权相关的业务含义
 declare module 'vue-router' {
   interface RouteMeta {
+    /** 页面标题（浏览器标签） */
     title?: string
+    /** 该页面是否需要登录后才能访问 */
     requiresAuth?: boolean
+    /** 该页面是否仅管理员可访问 */
     adminOnly?: boolean
   }
 }
@@ -31,6 +37,13 @@ const GUEST_PATHS = ['/login', '/register', '/reset-password']
 const router = createRouter({
   history: createWebHistory(),
   routes: [
+    {
+      // 登录后的用户主工作台
+      path: '/',
+      name: 'workspace',
+      component: () => import('@/views/WorkspaceView.vue'),
+      meta: { requiresAuth: true, title: '工作台' },
+    },
     {
       path: '/login',
       name: 'Login',
@@ -57,12 +70,6 @@ const router = createRouter({
       meta: { requiresAuth: true, title: '修改密码' },
     },
     {
-      path: '/',
-      name: 'Home',
-      component: () => import('@/views/HomeView.vue'),
-      meta: { requiresAuth: true, title: '首页' },
-    },
-    {
       // 管理端后台：要求 ADMIN 角色（守卫中校验）
       path: '/admin',
       component: () => import('@/layout/AdminLayout.vue'),
@@ -78,10 +85,19 @@ const router = createRouter({
   ],
 })
 
+// 请求层 401 兜底：Token 刷新失败时清空凭据并跳转登录页
+setUnauthorizedHandler(() => {
+  const current = router.currentRoute.value
+  // 已在登录页则不重复跳转，避免路由抖动
+  if (current.path !== '/login') {
+    router.push({ path: '/login', query: { redirect: current.fullPath } })
+  }
+})
+
 router.beforeEach(async (to) => {
   document.title = to.meta.title ? `${to.meta.title} · 文枢` : '文枢'
 
-  // 【临时】预览模式：注入假管理员身份并放行所有页面，允许查看登录页本身，联调前删除
+  // 【临时】预览模式：注入假管理员身份并放行所有页面，联调前删除
   if (PREVIEW_MODE) {
     const userStore = useUserStore()
     if (!userStore.user) userStore.user = PREVIEW_USER as unknown as UserInfo

@@ -1,8 +1,8 @@
 /**
  * @file 应用入口
  * @description 创建并挂载 Vue 应用：注册 Pinia 与 Vue Router，引入思源宋体与全局样式。
- *              本次设计不引入任何 UI 组件库，输入框 / 按钮 / Tab 全部手写，
- *              以贴合「克制 / 清透」的纸面设计气质。
+ *              用户端（登录/注册/工作台）为手写组件，贴合「克制 / 清透」的纸面设计气质；
+ *              管理端（/admin/**）基于 Element Plus，两者共存。
  */
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
@@ -20,7 +20,6 @@ import '@fontsource/noto-sans-sc/600.css'
 
 import App from './App.vue'
 import router from './router'
-import { setUnauthorizedHandler } from './api/http'
 
 // 管理端（/admin/**）基于 Element Plus；登录注册页为手写组件，两者共存
 import ElementPlus from 'element-plus'
@@ -36,14 +35,15 @@ app.use(createPinia())
 app.use(router)
 app.use(ElementPlus, { locale: zhCn })
 
-// 401 时清空本地凭证并跳转登录页（在 router 挂载后注入，避免循环依赖）
-setUnauthorizedHandler(() => {
-  void router.push('/login')
-})
-
-// 跨标签页同步：其他标签页退出登录后，本页跳登录
+// 跨标签页同步：其他标签页退出登录后，本页跳登录（401 兜底由 router 注册）
 watchTokenCleared(() => {
   if (router.currentRoute.value.path !== '/login') router.push('/login')
 })
 
 app.mount('#app')
+
+// 仅开发环境且开启开关时装载 Mock 适配器（工作台视觉预览用；动态导入确保不进生产包）
+if (import.meta.env.DEV && import.meta.env.VITE_USE_MOCK === '1') {
+  const { installMockAdapter } = await import('@/api/mock')
+  installMockAdapter()
+}
