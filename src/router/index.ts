@@ -81,11 +81,11 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   document.title = to.meta.title ? `${to.meta.title} · 文枢` : '文枢'
 
-  // 【临时】预览模式：注入假管理员身份并放行所有页面，联调前删除
+  // 【临时】预览模式：注入假管理员身份并放行所有页面，允许查看登录页本身，联调前删除
   if (PREVIEW_MODE) {
     const userStore = useUserStore()
     if (!userStore.user) userStore.user = PREVIEW_USER as unknown as UserInfo
-    return to.path === '/login' ? '/admin' : true
+    return true
   }
 
   const userStore = useUserStore()
