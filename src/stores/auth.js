@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import * as authApi from '../api/auth'
+import * as authApi from '../api/admin-auth'
 import { setTokens, clearTokens, getAccessToken } from '../utils/token'
 
 export const useAuthStore = defineStore('auth', {

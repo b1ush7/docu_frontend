@@ -29,14 +29,6 @@
           <el-icon><List /></el-icon>
           <template #title>任务管理</template>
         </el-menu-item>
-        <el-menu-item index="/admin/model-configs">
-          <el-icon><Cpu /></el-icon>
-          <template #title>模型配置</template>
-        </el-menu-item>
-        <el-menu-item index="/admin/templates">
-          <el-icon><Document /></el-icon>
-          <template #title>模板管理</template>
-        </el-menu-item>
       </el-menu>
     </el-aside>
 
@@ -101,9 +93,9 @@
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { DataAnalysis, User, Folder, List, Cpu, Document, Fold, Expand, ArrowDown } from '@element-plus/icons-vue'
+import { DataAnalysis, User, Folder, List, Fold, Expand, ArrowDown } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
-import { changePassword } from '../api/auth'
+import { changePassword } from '../api/admin-auth'
 
 const router = useRouter()
 const auth = useAuthStore()

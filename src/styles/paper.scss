@@ -1,0 +1,41 @@
+/**
+ * @file 纸浆背景 mixin
+ * @description 提供手工纸质感的两个图层，供全局（body）与局部纸面复用：
+ *              1) 噪点层 —— 内联 SVG feTurbulence 生成细颗粒，经 feColorMatrix 去色为中性灰，
+ *                 以极低透明度 + multiply 混合「长」进纸里，避免发脏；
+ *              2) 受光层 —— 极轻径向渐变，中心略亮、四角略暗，模拟纸张受光的呼吸感。
+ *              两层均用伪元素 + pointer-events:none，不参与布局、不遮挡交互。
+ */
+
+/// 噪点贴图平铺尺寸（px）：值越小颗粒越细密
+$noise-tile: 180px;
+/// 噪点整体透明度（规范要求 0.04 ~ 0.08，取中值）
+$noise-opacity: 0.06;
+
+@mixin paper-noise {
+  &::before,
+  &::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  // 图层一：细颗粒噪点
+  &::before {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='#{$noise-tile}' height='#{$noise-tile}'%3E%3Cfilter id='paper-noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23paper-noise)'/%3E%3C/svg%3E");
+    opacity: $noise-opacity;
+    mix-blend-mode: multiply;
+  }
+
+  // 图层二：受光呼吸感（中心略亮 → 四角略暗）
+  &::after {
+    background: radial-gradient(
+      120% 90% at 50% 42%,
+      rgba(255, 255, 255, 0.4) 0%,
+      rgba(255, 255, 255, 0) 55%,
+      rgba(43, 35, 20, 0.035) 100%
+    );
+  }
+}
