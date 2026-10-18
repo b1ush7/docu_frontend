@@ -11,7 +11,16 @@ import { computed, ref } from 'vue'
 import { formatBytes } from '@/utils/format'
 import { taskStatusLabel } from '@/constants/task'
 import PagePreview from './PagePreview.vue'
-import type { AiChange, AiPlanStatus, DocBlock, DocxStructure, Task } from '@/api/types'
+import { previewApi } from '@/api/preview'
+import { ApiError } from '@/api/http'
+import type {
+  AiChange,
+  AiPlanStatus,
+  DocBlock,
+  DocxStructure,
+  Task,
+  VersionCompareResult,
+} from '@/api/types'
 
 /** 组件入参 */
 const props = defineProps<{
@@ -88,10 +97,68 @@ function changeTypeLabel(type: string): string {
 }
 
 /**
- * 预览方式：page 版面预览（后端渲染 PNG，所见即所得）/ structure 结构预览（读块结构，快但排版不精确）。
+ * 预览方式：
+ *   - page      版面预览（后端渲染 PNG，所见即所得）
+ *   - structure 结构预览（读块结构，快但排版不精确）
+ *   - diff      与上一版本的块级差异（仅 versionNo > 1 可用）
  * 默认版面预览；服务端未启用渲染时 PagePreview 会自行降级提示，用户可切回结构预览。
  */
-const viewMode = ref<'page' | 'structure'>('page')
+const viewMode = ref<'page' | 'structure' | 'diff'>('page')
+
+/** 版本比较结果（仅在切到 diff 时加载） */
+const compareResult = ref<VersionCompareResult | null>(null)
+/** 版本比较加载中 */
+const compareLoading = ref(false)
+/** 版本比较失败提示 */
+const compareError = ref('')
+
+/**
+ * 加载与上一版本的差异。
+ * 比较接口要求两个版本都明确指定，这里用 versionNo-1 作为基准；
+ * 版本 1 没有上一版，因此不提供该页签。
+ */
+async function loadCompare(): Promise<void> {
+  const current = props.structure
+  if (!current || current.versionNo <= 1) {
+    return
+  }
+  compareLoading.value = true
+  compareError.value = ''
+  try {
+    compareResult.value = await previewApi.compare(
+      current.fileId,
+      current.versionNo - 1,
+      current.versionNo,
+    )
+  } catch (e) {
+    compareError.value = e instanceof ApiError ? e.message : '版本比较失败'
+  } finally {
+    compareLoading.value = false
+  }
+}
+
+/** 切换到某个预览方式，必要时懒加载对应数据 */
+function switchView(next: 'page' | 'structure' | 'diff'): void {
+  viewMode.value = next
+  if (next === 'diff' && compareResult.value === null && !compareLoading.value) {
+    void loadCompare()
+  }
+}
+
+/** 版本差异类型的中文名 */
+const COMPARE_TYPE_LABELS: Record<string, string> = {
+  ADDED: '新增',
+  REMOVED: '删除',
+  MODIFIED: '修改',
+}
+
+/**
+ * 版本差异类型展示名；未知类型原样返回
+ * @param type 后端返回的差异类型
+ */
+function compareTypeLabel(type: string): string {
+  return COMPARE_TYPE_LABELS[type] ?? type
+}
 </script>
 
 <template>
@@ -104,7 +171,7 @@ const viewMode = ref<'page' | 'structure'>('page')
         {{ taskStatusLabel(task.status) }} {{ task.progress }}%
       </span>
 
-      <!-- 有版本可预览时才显示切换：版面（真实渲染）/ 结构（块结构） -->
+      <!-- 有版本可预览时才显示切换：版面（真实渲染）/ 结构（块结构）/ 差异（与上一版比较） -->
       <div v-if="structure" class="preview-panel__tabs" role="tablist">
         <button
           class="preview-panel__tab"
@@ -112,7 +179,7 @@ const viewMode = ref<'page' | 'structure'>('page')
           type="button"
           role="tab"
           :aria-selected="viewMode === 'page'"
-          @click="viewMode = 'page'"
+          @click="switchView('page')"
         >
           版面预览
         </button>
@@ -122,9 +189,20 @@ const viewMode = ref<'page' | 'structure'>('page')
           type="button"
           role="tab"
           :aria-selected="viewMode === 'structure'"
-          @click="viewMode = 'structure'"
+          @click="switchView('structure')"
         >
           结构预览
+        </button>
+        <button
+          v-if="structure.versionNo > 1"
+          class="preview-panel__tab"
+          :class="{ 'preview-panel__tab--active': viewMode === 'diff' }"
+          type="button"
+          role="tab"
+          :aria-selected="viewMode === 'diff'"
+          @click="switchView('diff')"
+        >
+          与上一版比较
         </button>
       </div>
     </div>
@@ -182,6 +260,36 @@ const viewMode = ref<'page' | 'structure'>('page')
       :file-id="structure.fileId"
       :version-no="structure.versionNo"
     />
+
+    <!-- 与上一版本比较：块/单元格粒度的差异，truncated 时结果不完整 -->
+    <template v-else-if="structure && viewMode === 'diff'">
+      <p v-if="compareLoading" class="preview-panel__hint">版本差异加载中…</p>
+      <p v-else-if="compareError" class="preview-panel__hint" role="alert">{{ compareError }}</p>
+      <template v-else-if="compareResult">
+        <p class="preview-panel__hint">
+          第 {{ compareResult.fromVersion }} 版 → 第 {{ compareResult.toVersion }} 版，共
+          {{ compareResult.changes.length }} 处差异。
+          <strong v-if="compareResult.truncated">
+            结构读取有上限，差异列表可能不完整。
+          </strong>
+        </p>
+        <ul v-if="compareResult.changes.length" class="preview-panel__changes">
+          <li
+            v-for="(change, index) in compareResult.changes"
+            :key="`${change.key}-${index}`"
+            class="preview-panel__change"
+          >
+            <p class="preview-panel__change-head">
+              <span class="preview-panel__change-type">{{ compareTypeLabel(change.type) }}</span>
+              <span class="preview-panel__change-target">{{ change.label || change.key }}</span>
+            </p>
+            <p v-if="change.before" class="preview-panel__change-before">原：{{ change.before }}</p>
+            <p v-if="change.after" class="preview-panel__change-after">改：{{ change.after }}</p>
+          </li>
+        </ul>
+        <p v-else class="preview-panel__hint">两个版本内容一致。</p>
+      </template>
+    </template>
 
     <!-- 结构预览：按结构块渲染（不依赖服务端渲染能力） -->
     <div v-else-if="structure" class="preview-panel__card">
