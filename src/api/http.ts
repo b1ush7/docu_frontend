@@ -199,7 +199,7 @@ async function replayAfterRefresh(config: RetriableConfig): Promise<unknown> {
   }
   // 标记重放：此请求若再次 401 将直接进入失败分支，避免死循环
   config._retry = true
-  config.headers.set('Authorization', `Bearer ${getAccessToken() ?? ''}`)
+  config.headers.set('Authorization', getAccessToken() ?? '')
   return http.request(config)
 }
 
@@ -217,9 +217,11 @@ function resolveErrorMessage(code: number, serverMsg?: string): string {
 
 http.interceptors.request.use((config) => {
   const token = getAccessToken()
-  // 已登录的请求统一携带 Bearer Token
+  // 已登录的请求携带访问令牌。
+  // 注意：后端已改为直接读取 Authorization 头本身，不再使用 "Bearer " 前缀，
+  // 因此这里直接放 token 原值，不要再拼 `Bearer ${token}`。
   if (token) {
-    config.headers.set('Authorization', `Bearer ${token}`)
+    config.headers.set('Authorization', token)
   }
   // 传入请求追踪 ID，便于前后端日志对账
   config.headers.set('X-Request-ID', createRequestId())
@@ -312,7 +314,7 @@ export async function getBlob(url: string): Promise<Blob> {
 httpLegacy.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = authBridge?.getAccessToken()
   if (token) {
-    config.headers.Authorization = `Bearer ${token}`
+    config.headers.Authorization = token
   }
   config.requestId = createRequestId()
   config.headers['X-Request-ID'] = config.requestId
@@ -408,7 +410,7 @@ httpLegacy.interceptors.response.use(
           const tokens = await performRefresh(refreshToken)
           // 只重放一次
           config._retried = true
-          config.headers.Authorization = `Bearer ${tokens.accessToken}`
+          config.headers.Authorization = tokens.accessToken
           return httpLegacy.request(config)
         } catch {
           // 刷新失败 → 清空凭证并跳登录页

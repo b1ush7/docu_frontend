@@ -34,7 +34,7 @@ export interface PageResult<T> {
 
 /** 双 Token 凭据（登录 / 刷新成功时返回） */
 export interface TokenPair {
-  /** 访问令牌，请求头 Authorization: Bearer <accessToken> */
+  /** 访问令牌，请求头 Authorization: <accessToken>（不带 Bearer 前缀） */
   accessToken: string
   /** 刷新令牌，用于过期后换取新的一对 Token */
   refreshToken: string

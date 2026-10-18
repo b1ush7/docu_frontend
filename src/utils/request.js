@@ -53,7 +53,8 @@ async function handle401(config) {
     }
     const newToken = await refreshPromise
     config.headers = config.headers || {}
-    config.headers.Authorization = `Bearer ${newToken}`
+    // 后端直接读取 Authorization 头本身，不使用 "Bearer " 前缀
+    config.headers.Authorization = newToken
     return service(config)
   } catch (e) {
     await forceLogout()
@@ -82,7 +83,8 @@ service.interceptors.request.use((config) => {
   config.headers = config.headers || {}
   config.headers['X-Request-ID'] = genRequestId()
   const token = getAccessToken()
-  if (token) config.headers.Authorization = `Bearer ${token}`
+  // 后端直接读取 Authorization 头本身，不使用 "Bearer " 前缀
+  if (token) config.headers.Authorization = token
   return config
 })
 
