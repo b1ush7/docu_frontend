@@ -150,8 +150,20 @@ export interface Version {
 /** 任务状态：PENDING 排队 / RUNNING 执行中 / SUCCEEDED 成功 / FAILED 失败 / CANCELLED 已取消 */
 export type TaskStatus = 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED'
 
-/** 任务类型：OCR 识别 / CONVERT 格式转换 / AI_EDIT AI编辑 / EXPORT 导出 / IMAGE_GEN 图片生成 */
+/** 任务类型（**查询/展示用全集**）：OCR 识别 / CONVERT 格式转换 / AI_EDIT AI编辑 / EXPORT 导出 / IMAGE_GEN 图片生成 */
 export type TaskType = 'OCR' | 'CONVERT' | 'AI_EDIT' | 'EXPORT' | 'IMAGE_GEN'
+
+/**
+ * 任务类型（**创建用子集**）。
+ *
+ * 后端 `CreateTaskDTO.taskType` 的校验正则是 `^(CONVERT|EXPORT)$`，
+ * 即 `POST /task` 只接受这两种；`OCR` / `AI_EDIT` / `IMAGE_GEN` 仅作为历史任务的查询取值存在，
+ * 新建时会被后端以 400 拒绝。OCR 与 AI 编辑请走各自的同步接口，不要创建异步任务。
+ *
+ * 这里刻意与 `TaskType` 分开，让「创建时用了不支持的类型」在编译期就报错，
+ * 而不是等到运行时收到 400。
+ */
+export type TaskCreateType = 'CONVERT' | 'EXPORT'
 
 /** 任务步骤状态：SKIPPED 表示该步骤被跳过 */
 export type StepStatus = 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'SKIPPED'
@@ -198,8 +210,11 @@ export interface Task {
 
 /** 提交异步任务参数 */
 export interface TaskCreateParams {
-  /** 任务类型 */
-  taskType: TaskType
+  /**
+   * 任务类型，只能是 CONVERT 或 EXPORT。
+   * 后端 `CreateTaskDTO` 用 `^(CONVERT|EXPORT)$` 校验，其他值返回 400。
+   */
+  taskType: TaskCreateType
   /** 关联文件 ID，必须是当前用户自己的文件 */
   fileId?: number
   /** 输入版本号；未传时使用文件当前最新版本 */
@@ -296,3 +311,113 @@ export interface DocxStructure {
   /** 顶层结构块列表 */
   blocks: DocBlock[]
 }
+
+// ==================== AI 会话与待确认编辑（API.md 附录 A.1 / 第 8 节）====================
+
+/** 会话状态；ARCHIVED 后不再接收新回复 */
+export type AiSessionStatus = 'ACTIVE' | 'ARCHIVED'
+
+/** AI 会话 */
+export interface AiSession {
+  id: number
+  /** 归属用户 */
+  userId: number
+  /** 绑定的文件；纯对话为 null */
+  fileId: number | null
+  title: string | null
+  status: AiSessionStatus
+  createTime: string
+  updateTime: string
+}
+
+/** 会话列表查询参数 */
+export interface AiSessionListParams {
+  page?: number
+  size?: number
+  status?: AiSessionStatus
+  fileId?: number
+  keyword?: string
+}
+
+/** 生成回复请求体 */
+export interface AiReplyRequest {
+  /** 必填，非空，最多 2000 字符 */
+  content: string
+  /** 绑定文件时必填，必须为明确的正版本号；纯对话不允许传入 */
+  versionNo?: number
+  /** 必填，非空，最多 128 字符；一次发送意图对应一个稳定键 */
+  idempotencyKey: string
+  /** 可选，最多 5 条用户提供的资料来源（服务端不联网核验） */
+  sources?: AiReplySource[]
+}
+
+/** 用户提供的资料来源（仅回显，不代表已核验） */
+export interface AiReplySource {
+  title: string
+  url?: string
+  excerpt?: string
+}
+
+/** 回复运行状态 */
+export type AiRunStatus = 'RUNNING' | 'COMPLETED' | 'FAILED'
+
+/** 待确认计划状态 */
+export type AiPlanStatus = 'NONE' | 'PENDING' | 'CONFIRMED' | 'DISCARDED'
+
+/** 一条 AI 回复消息 */
+export interface AiMessage {
+  id: number
+  sessionId: number
+  role: 'USER' | 'ASSISTANT' | 'TOOL' | 'SYSTEM'
+  content: string
+  modelName?: string | null
+  promptTokens?: number | null
+  completionTokens?: number | null
+  durationMs?: number | null
+}
+
+/** 待确认修改的内容差异（仅在 planStatus=PENDING 时提供） */
+export interface AiChange {
+  type: string
+  target: string
+  /** 替换/删除的原文；插入为 null */
+  before: string | null
+  /** 替换/插入的新文；删除为 null */
+  after: string | null
+  reason?: string | null
+}
+
+/** 回复用量与执行信息 */
+export interface AiReplyResult {
+  reply: string
+  steps: unknown[]
+  plans: unknown[]
+  usage: {
+    modelCalls: number
+    toolCalls: number
+    inputTokens: number
+    outputTokens: number
+    estimatedCost: number
+    /** false 时 estimatedCost 不代表免费，只是未配置计价 */
+    costConfigured: boolean
+    elapsedMs: number
+  }
+  termination: string
+  truncated: boolean
+  sources?: AiReplySource[]
+  verificationNotice?: string | null
+}
+
+/** 生成/查询回复的响应 */
+export interface AiReply {
+  message: AiMessage
+  runStatus: AiRunStatus
+  planStatus: AiPlanStatus
+  /** 计划所依据的版本 */
+  sourceVersion: number | null
+  /** 确认后产出的新版本；未确认时为 null */
+  outputVersion: number | null
+  result: AiReplyResult
+  changes: AiChange[]
+}
+

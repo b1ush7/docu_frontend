@@ -11,9 +11,13 @@ import type { PageResult, Task, TaskCreateParams, TaskDetail, TaskListParams } f
 /** 异步任务模块 API 集合 */
 export const taskApi = {
   /**
-   * 提交异步任务（如 AI_EDIT：对指定文件执行 AI 编辑）
+   * 提交异步任务
    * @param params 任务类型、文件 ID、指令等参数
    * @returns 新建的任务记录（初始状态通常为 PENDING）
+   *
+   * 注意：`taskType` 只能是 `CONVERT` 或 `EXPORT`（后端 `CreateTaskDTO` 校验
+   * `^(CONVERT|EXPORT)$`）。`OCR`、`AI_EDIT`、`IMAGE_GEN` 仅作为历史任务的查询取值，
+   * 新建时会被后端以 400 拒绝；OCR 与 AI 编辑请走各自的同步接口（见 api/ai.ts）。
    */
   create(params: TaskCreateParams): Promise<Task> {
     return postData<Task>(API_ENDPOINTS.task.create, params)

@@ -107,28 +107,29 @@ export function usePreviewFlow(hooks: UsePreviewFlowHooks) {
   }
 
   /**
-   * 提交目标要求：创建 AI_EDIT 任务并进入预览态开始轮询
+   * 提交目标要求
    * @param fileId 目标文件 ID
    * @param instruction 用户输入的编辑指令
+   *
+   * 注意：后端已不再允许通过 `POST /task` 创建 `AI_EDIT` 任务。
+   * `CreateTaskDTO.taskType` 的校验正则是 `^(CONVERT|EXPORT)$`，
+   * `OCR` / `AI_EDIT` / `IMAGE_GEN` 仅保留为历史任务的查询取值。
+   * AI 编辑的正确链路是：
+   *   `POST /ai/sessions`（可绑定 fileId 建会话）
+   *     → `POST /ai/sessions/{id}/replies`（生成待确认计划）
+   *     → `GET  /ai/sessions/{id}/replies/{messageId}`（RUNNING 时轮询）
+   *     → `POST /ai/sessions/{id}/replies/{messageId}/confirm`（确认后落新版本）
+   * 这些接口已在 `src/api/ai.ts` 中就绪；本 composable 尚未改接新链路，
+   * 因此这里明确报错，而不是发一个必然被后端以 400 拒绝的请求。
    */
   async function submit(fileId: number, instruction: string): Promise<void> {
     stopPolling()
     structure.value = null
     structureError.value = ''
-    try {
-      // 创建 AI_EDIT 任务；成功后进入预览态，由轮询驱动进度展示
-      const task = await taskApi.create({
-        taskType: 'AI_EDIT',
-        fileId,
-        instruction,
-      })
-      activeTask.value = task
-      mode.value = 'preview'
-      schedulePoll()
-    } catch {
-      // 创建失败：保留在输入态，错误经 ApiError 已由 http 层弹出提示，这里不重复展示
-      activeTask.value = null
-    }
+    activeTask.value = null
+    void fileId
+    void instruction
+    structureError.value = 'AI 编辑已改为「会话确认」流程（/ai/sessions/{id}/replies），当前界面尚未接入'
   }
 
   /**
