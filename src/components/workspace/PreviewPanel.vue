@@ -10,12 +10,16 @@
 import { computed } from 'vue'
 import { formatBytes } from '@/utils/format'
 import { taskStatusLabel } from '@/constants/task'
-import type { DocBlock, DocxStructure, Task } from '@/api/types'
+import type { AiChange, AiPlanStatus, DocBlock, DocxStructure, Task } from '@/api/types'
 
 /** 组件入参 */
 const props = defineProps<{
   /** 生成当前预览的任务记录；null 表示无任务上下文 */
   task: Task | null
+  /** 待确认的内容差异：仅在 planStatus=PENDING 时有值 */
+  changes: AiChange[]
+  /** 待确认计划状态；只有 CONFIRMED 才会产出新版本 */
+  planStatus: AiPlanStatus
   /** 任务成功后读取的输出版本 DOCX 结构 */
   structure: DocxStructure | null
   /** 结构加载中标记 */
@@ -59,6 +63,28 @@ function cellText(cell: DocBlock): string {
     .map((child) => child.text ?? '')
     .join('\n')
 }
+
+/** 修改类型的中文展示名（后端返回的是操作码，前端不做翻译会看不懂） */
+const CHANGE_TYPE_LABELS: Record<string, string> = {
+  REPLACE_TEXT: '替换文本',
+  INSERT_PARAGRAPH: '插入段落',
+  DELETE_PARAGRAPH: '删除段落',
+  INSERT_TABLE: '插入表格',
+  DELETE_TABLE: '删除表格',
+  SET_CELL: '修改单元格',
+  SET_FORMULA: '设置公式',
+  INSERT_IMAGE: '插入图片',
+  SET_FORMAT: '设置格式',
+  RESTORE: '恢复版本',
+}
+
+/**
+ * 修改类型展示名；未知类型原样返回，避免新增操作码时显示空白
+ * @param type 后端返回的操作码
+ */
+function changeTypeLabel(type: string): string {
+  return CHANGE_TYPE_LABELS[type] ?? type
+}
 </script>
 
 <template>
@@ -87,6 +113,31 @@ function cellText(cell: DocBlock): string {
       <p class="preview-panel__error-title">生成{{ task.status === 'CANCELLED' ? '已取消' : '失败' }}</p>
       <p v-if="task.errorMessage" class="preview-panel__error-text">{{ task.errorMessage }}</p>
     </div>
+
+    <!-- 待确认修改：模型给出差异，确认后才写入新版本（此时还没有 structure） -->
+    <template v-else-if="planStatus === 'PENDING'">
+      <p class="preview-panel__hint">
+        已生成 {{ changes.length }} 处修改建议，<strong>确认后才会写入新版本</strong>。
+      </p>
+      <ul v-if="changes.length" class="preview-panel__changes">
+        <li
+          v-for="(change, index) in changes"
+          :key="`${change.target}-${index}`"
+          class="preview-panel__change"
+        >
+          <p class="preview-panel__change-head">
+            <span class="preview-panel__change-type">{{ changeTypeLabel(change.type) }}</span>
+            <span class="preview-panel__change-target">{{ change.target }}</span>
+          </p>
+          <p v-if="change.before" class="preview-panel__change-before">原：{{ change.before }}</p>
+          <p v-if="change.after" class="preview-panel__change-after">改：{{ change.after }}</p>
+          <p v-if="change.reason" class="preview-panel__change-reason">{{ change.reason }}</p>
+        </li>
+      </ul>
+      <p v-else class="preview-panel__hint">
+        模型未返回具体差异，可直接确认或返回修改重新描述要求。
+      </p>
+    </template>
 
     <!-- 结构加载中 -->
     <p v-else-if="structureLoading" class="preview-panel__hint">文稿加载中…</p>
@@ -322,5 +373,68 @@ function cellText(cell: DocBlock): string {
   color: $ink;
   line-height: 1.6;
   vertical-align: top;
+}
+</style>
+
+<style scoped lang="scss">
+/* 待确认修改列表：确认前就应看到「改了什么」，而不是确认后才发现 */
+.preview-panel__changes {
+  display: flex;
+  flex-direction: column;
+  gap: $gap-sm;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.preview-panel__change {
+  padding: $gap-sm;
+  background-color: $paper-surface;
+  border: $border-w solid $line;
+  border-radius: $radius;
+}
+
+.preview-panel__change-head {
+  display: flex;
+  align-items: center;
+  gap: $gap-xs;
+  margin: 0 0 $gap-xs;
+}
+
+.preview-panel__change-type {
+  font-size: $font-size-caption;
+  font-weight: $weight-medium;
+  color: $accent;
+}
+
+.preview-panel__change-target {
+  font-size: $font-size-caption;
+  color: $ink-soft;
+}
+
+.preview-panel__change-before,
+.preview-panel__change-after,
+.preview-panel__change-reason {
+  margin: 0;
+  font-size: $font-size-body;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* 原文划掉、新文正常色，靠字重与划线区分，不用红绿（沿用墨色体系） */
+.preview-panel__change-before {
+  color: $ink-soft;
+  text-decoration: line-through;
+}
+
+.preview-panel__change-after {
+  color: $ink;
+}
+
+.preview-panel__change-reason {
+  margin-top: $gap-xs;
+  font-size: $font-size-caption;
+  color: $ink-soft;
 }
 </style>

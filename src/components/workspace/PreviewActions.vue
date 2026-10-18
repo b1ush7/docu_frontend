@@ -7,8 +7,10 @@
  */
 /** 组件入参 */
 defineProps<{
-  /** 是否允许确认生成：任务成功且文稿结构加载完成 */
+  /** 是否允许确认生成：存在待确认计划（planStatus=PENDING）时可确认 */
   canConfirm: boolean
+  /** 是否允许放弃修改：与 canConfirm 同源，已确认或已放弃后不可再操作 */
+  canDiscard: boolean
 }>()
 
 /** 组件对外事件 */
@@ -17,6 +19,8 @@ const emit = defineEmits<{
   (e: 'back'): void
   /** 点击确认生成（仅在 canConfirm 为 true 时按钮可点击） */
   (e: 'confirm'): void
+  /** 点击放弃修改（不产生版本，仅在 canDiscard 为 true 时按钮可点击） */
+  (e: 'discard'): void
 }>()
 </script>
 
@@ -27,7 +31,17 @@ const emit = defineEmits<{
       返回修改
     </button>
 
-    <!-- 确认生成：强调色主按钮，仅在文稿就绪时可用 -->
+    <!-- 放弃修改：放弃待确认计划，不产生版本；确认/放弃互斥 -->
+    <button
+      class="preview-actions__btn preview-actions__btn--discard"
+      type="button"
+      :disabled="!canDiscard"
+      @click="emit('discard')"
+    >
+      放弃修改
+    </button>
+
+    <!-- 确认生成：强调色主按钮，仅在存在待确认计划时可用 -->
     <button
       class="preview-actions__btn preview-actions__btn--confirm"
       type="button"
@@ -70,6 +84,18 @@ const emit = defineEmits<{
   border: $border-w solid $line;
 
   &:hover:not(:disabled) {
+    border-color: $ink-soft;
+  }
+}
+
+// 放弃修改：虚线线框次级按钮，刻意弱于主操作，降低误触
+.preview-actions__btn--discard {
+  color: $ink-soft;
+  background-color: transparent;
+  border: $border-w dashed $line;
+
+  &:hover:not(:disabled) {
+    color: $ink;
     border-color: $ink-soft;
   }
 }

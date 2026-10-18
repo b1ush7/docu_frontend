@@ -219,14 +219,18 @@ async function onSubmitInstruction(instruction: string): Promise<void> {
           <div v-show="previewFlow.mode.value === 'preview'" class="main-area__state main-area__state--preview">
             <PreviewPanel
               :task="previewFlow.activeTask.value"
+              :changes="previewFlow.changes.value"
+              :plan-status="previewFlow.planStatus.value"
               :structure="previewFlow.structure.value"
               :structure-loading="previewFlow.structureLoading.value"
               :structure-error="previewFlow.structureError.value"
             />
             <PreviewActions
               :can-confirm="previewFlow.canConfirm.value"
+              :can-discard="previewFlow.canConfirm.value"
               @back="previewFlow.back()"
               @confirm="previewFlow.confirm()"
+              @discard="previewFlow.discard()"
             />
           </div>
         </div>
