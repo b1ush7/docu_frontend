@@ -4,6 +4,11 @@ import { defineConfig } from 'vite'
 
 // 后端 Base URL: http://<host>:8080，通过 dev 代理转发，避免跨域
 export default defineConfig({
+  // GitHub Pages 的项目站点部署在 /docu_frontend/ 子路径下，必须与仓库名一致。
+  // 不设这一项时 base 默认为 '/'，构建产物里的资源引用会写成 /assets/*.js，
+  // 浏览器会去域名根目录找（jenandygyt-web.github.io/assets/...）而实际文件在
+  // /docu_frontend/assets/... → 404 → #app 为空 → 白屏。
+  base: '/docu_frontend/',
   plugins: [vue()],
   resolve: {
     // 统一使用 @ 指向 src 目录，避免组件内出现多层相对路径
