@@ -62,6 +62,43 @@ export const API_ENDPOINTS = {
      */
     structure: (fileId: number, versionNo: number) =>
       `/file/${fileId}/versions/${versionNo}/structure`,
+    /**
+     * 页面预览元信息（页数、是否可预览、渲染引擎、DPI）
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    preview: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/preview`,
+    /**
+     * 渲染指定页为 PNG（二进制流）
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     * @param pageNo 页码，从 1 开始
+     */
+    pagePreview: (fileId: number, versionNo: number, pageNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/pages/${pageNo}/preview`,
+    /**
+     * 比较两个版本的块级差异
+     * @param fileId 文件 ID
+     * @param fromVersion 基准版本号
+     * @param toVersion 目标版本号
+     */
+    compare: (fileId: number, fromVersion: number, toVersion: number) =>
+      `/file/${fileId}/versions/${fromVersion}/compare/${toVersion}`,
+    /**
+     * 将指定版本导出为 PDF（二进制流）
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    exportPdf: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/export/pdf`,
+    /**
+     * DOCX 应用级兼容性验收
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    compatibilityCheck: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/compatibility-check`,
   },
   /** 异步任务模块 */
   task: {

@@ -11,6 +11,8 @@ defineProps<{
   canConfirm: boolean
   /** 是否允许放弃修改：与 canConfirm 同源，已确认或已放弃后不可再操作 */
   canDiscard: boolean
+  /** 是否允许导出 PDF：已渲染出明确版本时才可用 */
+  canExport: boolean
 }>()
 
 /** 组件对外事件 */
@@ -21,6 +23,8 @@ const emit = defineEmits<{
   (e: 'confirm'): void
   /** 点击放弃修改（不产生版本，仅在 canDiscard 为 true 时按钮可点击） */
   (e: 'discard'): void
+  /** 点击导出 PDF（仅在 canExport 为 true 时按钮可点击） */
+  (e: 'export'): void
 }>()
 </script>
 
@@ -29,6 +33,16 @@ const emit = defineEmits<{
     <!-- 返回修改：次级线框按钮，始终可用 -->
     <button class="preview-actions__btn preview-actions__btn--back" type="button" @click="emit('back')">
       返回修改
+    </button>
+
+    <!-- 导出 PDF：把当前版本导出为 PDF，不影响版本记录 -->
+    <button
+      class="preview-actions__btn preview-actions__btn--export"
+      type="button"
+      :disabled="!canExport"
+      @click="emit('export')"
+    >
+      导出 PDF
     </button>
 
     <!-- 放弃修改：放弃待确认计划，不产生版本；确认/放弃互斥 -->
@@ -79,6 +93,17 @@ const emit = defineEmits<{
 
 // 返回修改：线框次级按钮
 .preview-actions__btn--back {
+  color: $ink;
+  background-color: $paper-surface;
+  border: $border-w solid $line;
+
+  &:hover:not(:disabled) {
+    border-color: $ink-soft;
+  }
+}
+
+// 导出 PDF：线框次级按钮，成功后才产生下载，不改变版本
+.preview-actions__btn--export {
   color: $ink;
   background-color: $paper-surface;
   border: $border-w solid $line;

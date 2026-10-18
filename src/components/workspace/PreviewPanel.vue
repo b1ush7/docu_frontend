@@ -7,9 +7,10 @@
  *              失败（脱敏错误信息，按风格规范用墨色小字）、就绪（结构渲染）。
  *              "返回修改 / 确认生成"按钮由 PreviewActions 组件承担，不在本组件内。
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { formatBytes } from '@/utils/format'
 import { taskStatusLabel } from '@/constants/task'
+import PagePreview from './PagePreview.vue'
 import type { AiChange, AiPlanStatus, DocBlock, DocxStructure, Task } from '@/api/types'
 
 /** 组件入参 */
@@ -85,6 +86,12 @@ const CHANGE_TYPE_LABELS: Record<string, string> = {
 function changeTypeLabel(type: string): string {
   return CHANGE_TYPE_LABELS[type] ?? type
 }
+
+/**
+ * 预览方式：page 版面预览（后端渲染 PNG，所见即所得）/ structure 结构预览（读块结构，快但排版不精确）。
+ * 默认版面预览；服务端未启用渲染时 PagePreview 会自行降级提示，用户可切回结构预览。
+ */
+const viewMode = ref<'page' | 'structure'>('page')
 </script>
 
 <template>
@@ -96,6 +103,30 @@ function changeTypeLabel(type: string): string {
       <span v-else-if="isGenerating && task" class="preview-panel__state">
         {{ taskStatusLabel(task.status) }} {{ task.progress }}%
       </span>
+
+      <!-- 有版本可预览时才显示切换：版面（真实渲染）/ 结构（块结构） -->
+      <div v-if="structure" class="preview-panel__tabs" role="tablist">
+        <button
+          class="preview-panel__tab"
+          :class="{ 'preview-panel__tab--active': viewMode === 'page' }"
+          type="button"
+          role="tab"
+          :aria-selected="viewMode === 'page'"
+          @click="viewMode = 'page'"
+        >
+          版面预览
+        </button>
+        <button
+          class="preview-panel__tab"
+          :class="{ 'preview-panel__tab--active': viewMode === 'structure' }"
+          type="button"
+          role="tab"
+          :aria-selected="viewMode === 'structure'"
+          @click="viewMode = 'structure'"
+        >
+          结构预览
+        </button>
+      </div>
     </div>
 
     <!-- 生成中：进度条 + 当前步骤（轮询驱动） -->
@@ -145,7 +176,14 @@ function changeTypeLabel(type: string): string {
     <!-- 结构加载失败 -->
     <p v-else-if="structureError" class="preview-panel__hint" role="alert">{{ structureError }}</p>
 
-    <!-- 预览卡片：按结构块渲染 -->
+    <!-- 版面预览：拿后端渲染的 PNG，字体/页边距/分页所见即所得 -->
+    <PagePreview
+      v-else-if="structure && viewMode === 'page'"
+      :file-id="structure.fileId"
+      :version-no="structure.versionNo"
+    />
+
+    <!-- 结构预览：按结构块渲染（不依赖服务端渲染能力） -->
     <div v-else-if="structure" class="preview-panel__card">
       <template v-for="block in structure.blocks" :key="block.blockId">
         <!-- 标题块：按层级渲染 h1～h6 -->
@@ -436,5 +474,35 @@ function changeTypeLabel(type: string): string {
   margin-top: $gap-xs;
   font-size: $font-size-caption;
   color: $ink-soft;
+}
+
+/* 预览方式切换：版面目 / 结构 */
+.preview-panel__tabs {
+  display: flex;
+  gap: $gap-xs;
+  margin-left: auto;
+}
+
+.preview-panel__tab {
+  height: $control-height;
+  padding: 0 $gap-sm;
+  font: inherit;
+  font-size: $font-size-caption;
+  color: $ink-soft;
+  background-color: transparent;
+  border: $border-w solid transparent;
+  border-radius: $radius;
+  cursor: pointer;
+  transition: color $transition-fast, border-color $transition-fast;
+
+  &:hover {
+    color: $ink;
+  }
+}
+
+.preview-panel__tab--active {
+  color: $ink;
+  background-color: $paper-surface;
+  border-color: $line;
 }
 </style>

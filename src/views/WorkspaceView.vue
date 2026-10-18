@@ -8,6 +8,7 @@
  *              页面级暂存"当前选中文件 / 任务 ID"，workspace store 接入后迁移到全局状态。
  */
 import { computed, onMounted, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import WorkspaceLayout from '@/components/workspace/WorkspaceLayout.vue'
 import FileListPanel from '@/components/workspace/FileListPanel.vue'
 import TaskListPanel from '@/components/workspace/TaskListPanel.vue'
@@ -18,6 +19,8 @@ import PreviewActions from '@/components/workspace/PreviewActions.vue'
 import SidebarSearch from '@/components/workspace/SidebarSearch.vue'
 import { useCurrentUser } from '@/composables/useCurrentUser'
 import { usePreviewFlow } from '@/composables/usePreviewFlow'
+import { previewApi } from '@/api/preview'
+import { ApiError } from '@/api/http'
 import type { FileAsset, Task } from '@/api/types'
 
 // 当前登录用户（模块级单例，会话内仅请求一次 /user/me；后端暂无昵称/头像字段，以 username 展示）
@@ -155,6 +158,30 @@ async function onSubmitInstruction(instruction: string): Promise<void> {
     taskListRef.value?.refresh()
   }
 }
+
+/**
+ * 导出当前预览版本的 PDF。
+ * 必须用结构里的明确 versionNo，不能用「最新版本」——
+ * 否则用户看到的版本和导出的版本可能不是同一份。
+ */
+async function onExportPdf(): Promise<void> {
+  const current = previewFlow.structure.value
+  if (!current) {
+    return
+  }
+  try {
+    const blob = await previewApi.exportPdf(current.fileId, current.versionNo)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${current.fileId}-v${current.versionNo}.pdf`
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    // 503 表示服务端未接入渲染后端；400 表示该格式不支持导出
+    ElMessage.error(e instanceof ApiError ? e.message : '导出 PDF 失败')
+  }
+}
 </script>
 
 <template>
@@ -228,9 +255,11 @@ async function onSubmitInstruction(instruction: string): Promise<void> {
             <PreviewActions
               :can-confirm="previewFlow.canConfirm.value"
               :can-discard="previewFlow.canConfirm.value"
+              :can-export="previewFlow.structure.value !== null"
               @back="previewFlow.back()"
               @confirm="previewFlow.confirm()"
               @discard="previewFlow.discard()"
+              @export="onExportPdf"
             />
           </div>
         </div>

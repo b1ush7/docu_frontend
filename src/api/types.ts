@@ -421,3 +421,82 @@ export interface AiReply {
   changes: AiChange[]
 }
 
+// ==================== 页面预览 / 版本比较 / 兼容性验收 ====================
+
+/**
+ * 页面预览元信息（对应后端 PagePreviewInfoVO）
+ * pageCount 在 DOCX/XLSX 首次渲染前可能为 null
+ */
+export interface VersionPreviewMeta {
+  fileId: number
+  versionNo: number
+  /** 版本自身的 MIME 类型 */
+  contentType: string | null
+  /** 版本自身扩展名 */
+  extension: string | null
+  /** 可预览页数；不可预览为 null */
+  pageCount: number | null
+  /** 是否需要外部转换器（PDF、图片为 false） */
+  requiresConversion: boolean
+  /** 是否具备预览条件 */
+  previewable: boolean
+  /** 实际渲染引擎；PDF/图片为 native */
+  engine: string | null
+  /** 渲染 DPI */
+  dpi: number
+  /** 不可预览时的可读说明 */
+  message: string | null
+}
+
+/** 版本比较中的单条差异类型 */
+export type VersionCompareChangeType = 'ADDED' | 'REMOVED' | 'MODIFIED'
+
+/** 版本比较中的单条差异（块或单元格粒度） */
+export interface VersionCompareChange {
+  type: VersionCompareChangeType
+  /** 块 ID 或「工作表!单元格」 */
+  key: string
+  /** 可读标签 */
+  label: string | null
+  /** 修改/删除时的原文；新增为 null */
+  before: string | null
+  /** 修改/新增时的新文；删除为 null */
+  after: string | null
+  /** 内容种类：段落 / 表格单元格等 */
+  kind: string | null
+}
+
+/** 版本比较结果（对应后端 VersionComparisonVO） */
+export interface VersionCompareResult {
+  fileId: number
+  fromVersion: number
+  toVersion: number
+  format: string
+  /** true 表示结构读取有上限，changes 不完整 */
+  truncated: boolean
+  changes: VersionCompareChange[]
+}
+
+/** 兼容性问题的严重级别；只有 ERROR 会使 compatible=false */
+export type CompatibilitySeverity = 'ERROR' | 'WARNING'
+
+/** 兼容性验收中的单条问题 */
+export interface CompatibilityIssue {
+  severity: CompatibilitySeverity
+  /** NO_PAGES / NO_RENDERED_PAGE / PAGES_TRUNCATED / MISSING_FONTS / CONTENT_NEAR_BORDER */
+  code: string
+  message: string
+}
+
+/** 兼容性验收报告（对应后端 DocxCompatibilityReportVO） */
+export interface CompatibilityReport {
+  fileId: number
+  versionNo: number
+  compatible: boolean
+  engine: string | null
+  pageCount: number
+  renderedPages: number
+  missingFonts: string[]
+  issues: CompatibilityIssue[]
+}
+
