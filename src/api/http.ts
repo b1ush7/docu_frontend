@@ -64,7 +64,7 @@ export class ApiError extends Error {
 type RetriableConfig = InternalAxiosRequestConfig & { _retry?: boolean }
 
 /** 后端服务地址，可通过环境变量 VITE_API_BASE_URL 覆盖 */
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
+const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'https://documenter.perfumestore.xin'
 
 // ==================== 认证桥接（legacy 栈） ====================
 

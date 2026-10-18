@@ -5,7 +5,7 @@
  * 新增环境变量时需在此补充对应字段类型。
  */
 interface ImportMetaEnv {
-  /** 后端 API 服务地址，默认 http://localhost:8080 */
+  /** 后端 API 服务地址，默认 https://documenter.perfumestore.xin */
   readonly VITE_API_BASE_URL?: string
   /** 置为 '1' 时在开发环境装载 Mock 适配器（工作台视觉预览用） */
   readonly VITE_USE_MOCK?: string
