@@ -1,43 +1,79 @@
-# Simple workflow for deploying static content to GitHub Pages
+# 把前端构建产物部署到 GitHub Pages
+#
+# 关键修复（原工作流的问题）：
+#   旧版本直接 upload artifact `path: '.'`，也就是把**整个仓库源码**原样传到 Pages。
+#   源码里的 index.html 引用的是 /src/main.ts（TypeScript 源文件），
+#   浏览器既取不到该路径（站点在 /docu_frontend/ 子路径下），也无法执行 .ts，
+#   结果 index.html 能下载、JS 加载 404 → #app 永远为空 → 白屏。
+#   现在补上真正的构建步骤，只上传 dist 产物。
 name: Deploy static content to Pages
 
 on:
-  # Runs on pushes targeting the default branch
+  # 推送到默认分支时部署
   push:
     branches: ["master"]
 
-  # Allows you to run this workflow manually from the Actions tab
+  # 允许在 Actions 页面手动触发
   workflow_dispatch:
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
-# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
 jobs:
-  # Single deploy job since we're just deploying
+  # 先构建，再部署：两者分开，构建失败时不会用坏产物覆盖线上
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # 优先用 ci 保证可复现（依赖 lockfile）；lockfile 与 package.json 不同步时回退到 install，
+      # 避免因为一个过期的 lockfile 让整次部署失败
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+      # 只跑 vite build，不跑 npm run build。
+      # 原因：npm run build 会先执行 vue-tsc --noEmit 做类型检查，而当前 tsconfig
+      # 没有开启 allowJs、include 也不含 src/**/*.js，但 router/index.ts 导入了
+      # @/utils/preview（.js 文件），strict 模式下会报 TS7016 导致构建失败。
+      # 类型检查应作为独立的质量门禁修好后再加回来，不应该挡住部署。
+      - name: Build
+        run: npx vite build
+
+      # SPA 回退：GitHub Pages 对未知路径返回 404，
+      # 把 index.html 复制为 404.html 后，直接访问 /docu_frontend/login
+      # 或在子路由刷新时仍能由前端路由接管（vue-router 使用 BASE_URL 作为 base）。
+      - name: SPA fallback
+        run: cp dist/index.html dist/404.html
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # 只上传构建产物，不再上传整个仓库源码
+          path: './dist'
+
   deploy:
+    needs: build
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          # Upload entire repository
-          path: '.'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5

@@ -35,7 +35,11 @@ declare module 'vue-router' {
 const GUEST_PATHS = ['/login', '/register', '/reset-password']
 
 const router = createRouter({
-  history: createWebHistory(),
+  // 必须与 vite 的 base 保持一致（import.meta.env.BASE_URL）。
+  // 部署在 GitHub Pages 子路径 /docu_frontend/ 下时，如果这里仍用默认的 '/'，
+  // 路由会把 /docu_frontend/login 当作匹配不到的路径而回退到首页，
+  // 导致「直接访问或在子页面刷新」时页面错乱。
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       // 登录后的用户主工作台
