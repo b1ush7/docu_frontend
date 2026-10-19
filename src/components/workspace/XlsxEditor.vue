@@ -22,7 +22,10 @@ import { ApiError } from '@/api/http'
 import type {
   Version,
   XlsxCellEditOperation,
+  XlsxDataEditOperation,
+  XlsxFormatOperation,
   XlsxFormulaResults,
+  XlsxImageOperation,
   XlsxRange,
   XlsxSheetEditOperation,
   XlsxStructure,
@@ -42,7 +45,7 @@ const emit = defineEmits<{
 }>()
 
 /** 面板页签 */
-const tab = ref<'browse' | 'range' | 'edit' | 'sheet'>('browse')
+const tab = ref<'browse' | 'range' | 'edit' | 'sheet' | 'misc'>('browse')
 const structure = ref<XlsxStructure | null>(null)
 const loading = ref(false)
 const submitting = ref(false)
@@ -157,6 +160,54 @@ async function submit(): Promise<void> {
 }
 
 const VALUE_TYPES: XlsxValueType[] = ['STRING', 'NUMBER', 'BOOLEAN', 'DATE']
+
+/* ---------- 数据 / 格式 / 图片（单条提交） ---------- */
+const dataOp = ref<XlsxDataEditOperation>({ type: 'SORT_RANGE', sheetName: '', range: 'A1:C10' })
+const formatOp = ref<XlsxFormatOperation>({ sheetName: '', range: 'A1:C10' })
+const imageOp = ref<XlsxImageOperation>({
+  sheetName: '',
+  cell: 'A1',
+  imageFileId: 0,
+  imageVersionNo: 1,
+  widthPixels: 200,
+  heightPixels: 200,
+})
+
+/** 三个接口共用的一次性提交 */
+async function submitMisc(kind: 'data' | 'format' | 'image'): Promise<void> {
+  if (props.fileId === null || props.versionNo === null) return
+  let run: Promise<Version>
+  if (kind === 'data') {
+    if (!dataOp.value.sheetName || !dataOp.value.range) {
+      ElMessage.warning('排序/筛选需要工作表与区域')
+      return
+    }
+    run = xlsxApi.editData(props.fileId, props.versionNo, { operations: [dataOp.value] })
+  } else if (kind === 'format') {
+    if (!formatOp.value.sheetName || !formatOp.value.range) {
+      ElMessage.warning('格式设置需要工作表与区域')
+      return
+    }
+    run = xlsxApi.formatCells(props.fileId, props.versionNo, { operations: [formatOp.value] })
+  } else {
+    if (!imageOp.value.sheetName || !imageOp.value.cell || !imageOp.value.imageFileId) {
+      ElMessage.warning('内嵌图片需要工作表、单元格与图片文件 ID')
+      return
+    }
+    run = xlsxApi.insertImages(props.fileId, props.versionNo, { operations: [imageOp.value] })
+  }
+  submitting.value = true
+  error.value = ''
+  try {
+    const version = await run
+    ElMessage.success('已创建新版本')
+    emit('edited', version)
+  } catch (e) {
+    error.value = e instanceof ApiError ? e.message : '提交失败'
+  } finally {
+    submitting.value = false
+  }
+}
 
 /* ---------- 行列编辑（structure-edits） ---------- */
 const structOps = ref<XlsxStructureEditOperation[]>([])
@@ -374,6 +425,65 @@ async function submitSheet(): Promise<void> {
           <el-button type="primary" size="small" :loading="submitting" :disabled="!sheetOps.length" @click="submitSheet">
             提交 {{ sheetOps.length }} 条
           </el-button>
+        </div>
+      </el-tab-pane>
+
+      <!-- 数据 / 格式 / 图片 -->
+      <el-tab-pane label="数据 / 格式 / 图片" name="misc">
+        <p class="xe__hint">三项各自单独提交，每次提交创建一个新版本。</p>
+
+        <p class="xe__hint"><strong>排序与自动筛选</strong>（区域用 A1:C10 记法；排序列用 B 这样的列名）</p>
+        <div class="xe__row">
+          <el-select v-model="dataOp.type" class="xe__op-type">
+            <el-option label="区域排序" value="SORT_RANGE" />
+            <el-option label="设置自动筛选" value="SET_AUTO_FILTER" />
+            <el-option label="清除自动筛选" value="CLEAR_AUTO_FILTER" />
+          </el-select>
+          <el-select v-model="dataOp.sheetName" class="xe__sheet" filterable placeholder="工作表">
+            <el-option v-for="s in sheets" :key="s.name" :label="s.name" :value="s.name" />
+          </el-select>
+          <el-input v-model="dataOp.range" placeholder="A1:C10" class="xe__range" />
+          <el-input v-if="dataOp.type === 'SORT_RANGE'" v-model="dataOp.keyColumn" placeholder="排序列 B" class="xe__cell" />
+          <el-select v-if="dataOp.type === 'SORT_RANGE'" v-model="dataOp.direction" class="xe__type">
+            <el-option label="升序" value="ASC" />
+            <el-option label="降序" value="DESC" />
+          </el-select>
+          <el-checkbox v-if="dataOp.type === 'SORT_RANGE'" v-model="dataOp.hasHeader">首行为表头</el-checkbox>
+          <el-button size="small" :loading="submitting" @click="submitMisc('data')">提交</el-button>
+        </div>
+
+        <p class="xe__hint"><strong>单元格格式</strong>（颜色用 6 位十六进制，可带 #）</p>
+        <div class="xe__row">
+          <el-select v-model="formatOp.sheetName" class="xe__sheet" filterable placeholder="工作表">
+            <el-option v-for="s in sheets" :key="s.name" :label="s.name" :value="s.name" />
+          </el-select>
+          <el-input v-model="formatOp.range" placeholder="A1 或 A1:C3" class="xe__range" />
+          <el-input v-model="formatOp.fontName" placeholder="字体名" class="xe__cell" />
+          <el-input-number v-model="formatOp.fontSize" :min="1" :max="409" placeholder="字号" />
+          <el-checkbox v-model="formatOp.bold">加粗</el-checkbox>
+          <el-checkbox v-model="formatOp.italic">斜体</el-checkbox>
+          <el-select v-model="formatOp.horizontalAlignment" class="xe__type" clearable placeholder="水平对齐">
+            <el-option v-for="a in ['GENERAL','LEFT','CENTER','RIGHT','FILL','JUSTIFY','CENTER_SELECTION','DISTRIBUTED']" :key="a" :label="a" :value="a" />
+          </el-select>
+          <el-input v-model="formatOp.fillColor" placeholder="填充 #FFEEAA" class="xe__cell" />
+          <el-input v-model="formatOp.numberFormat" placeholder="数字格式 0.00" class="xe__cell" />
+          <el-select v-model="formatOp.borderStyle" class="xe__type" clearable placeholder="边框">
+            <el-option v-for="b in ['NONE','THIN','MEDIUM','DASHED','DOTTED','THICK','DOUBLE']" :key="b" :label="b" :value="b" />
+          </el-select>
+          <el-button size="small" :loading="submitting" @click="submitMisc('format')">提交</el-button>
+        </div>
+
+        <p class="xe__hint"><strong>内嵌图片</strong>（图片须来自已有文件的明确版本；宽高 1～10000 像素）</p>
+        <div class="xe__row">
+          <el-select v-model="imageOp.sheetName" class="xe__sheet" filterable placeholder="工作表">
+            <el-option v-for="s in sheets" :key="s.name" :label="s.name" :value="s.name" />
+          </el-select>
+          <el-input v-model="imageOp.cell" placeholder="锚点 A1" class="xe__cell" />
+          <el-input-number v-model="imageOp.imageFileId" :min="1" placeholder="图片 fileId" />
+          <el-input-number v-model="imageOp.imageVersionNo" :min="1" placeholder="版本" />
+          <el-input-number v-model="imageOp.widthPixels" :min="1" :max="10000" placeholder="宽" />
+          <el-input-number v-model="imageOp.heightPixels" :min="1" :max="10000" placeholder="高" />
+          <el-button size="small" :loading="submitting" @click="submitMisc('image')">提交</el-button>
         </div>
       </el-tab-pane>
     </el-tabs>
