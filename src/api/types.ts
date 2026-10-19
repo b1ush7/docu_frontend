@@ -372,6 +372,7 @@ export interface AiMessage {
   sessionId: number
   role: 'USER' | 'ASSISTANT' | 'TOOL' | 'SYSTEM'
   content: string
+  createTime?: string
   modelName?: string | null
   promptTokens?: number | null
   completionTokens?: number | null

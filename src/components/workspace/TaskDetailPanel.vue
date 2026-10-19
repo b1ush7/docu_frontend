@@ -28,6 +28,7 @@ const emit = defineEmits<{
   (e: 'updated', task: Task): void
   /** 重试成功：携带新创建的任务记录，父组件应切换选中到新任务 */
   (e: 'retried', task: Task): void
+  (e: 'open-result', task: Task): void
 }>()
 
 // ==================== 详情数据 ====================
@@ -43,6 +44,7 @@ const loadError = ref('')
 
 /** 轮询定时器句柄；null 表示当前没有进行中的轮询 */
 let pollTimer: ReturnType<typeof setTimeout> | null = null
+let detailRequest = 0
 
 /** 轮询间隔毫秒数：任务无 SSE 推送，3 秒轮询在实时性与请求量之间折中 */
 const POLL_INTERVAL_MS = 3000
@@ -64,6 +66,7 @@ function stopPolling(): void {
  * 拉取任务详情；任务处于执行态时安排下一轮轮询
  */
 async function fetchDetail(): Promise<void> {
+  const request = ++detailRequest
   const id = props.taskId
   // 未选中任务：清空详情展示引导文案
   if (id === null || id === undefined) {
@@ -73,7 +76,9 @@ async function fetchDetail(): Promise<void> {
   loading.value = true
   loadError.value = ''
   try {
-    detail.value = await taskApi.detail(id)
+    const result = await taskApi.detail(id)
+    if (request !== detailRequest || props.taskId !== id) return
+    detail.value = result
     emit('updated', detail.value.task)
     stopPolling()
     // 仅执行态任务需要轮询；终态（完成/失败/取消）不再请求
@@ -83,11 +88,12 @@ async function fetchDetail(): Promise<void> {
       }, POLL_INTERVAL_MS)
     }
   } catch (e) {
+    if (request !== detailRequest || props.taskId !== id) return
     loadError.value = e instanceof ApiError ? e.message : '任务详情加载失败'
     // 加载失败同样停止轮询，避免错误状态下持续请求
     stopPolling()
   } finally {
-    loading.value = false
+    if (request === detailRequest) loading.value = false
   }
 }
 
@@ -113,6 +119,7 @@ watch(
 
 // 组件卸载：必须清理轮询定时器，防止内存泄漏与无效请求
 onBeforeUnmount(() => {
+  detailRequest++
   stopPolling()
 })
 
@@ -159,6 +166,7 @@ async function onCancel(): Promise<void> {
   actionError.value = ''
   try {
     const updated = await taskApi.cancel(current.id)
+    if (props.taskId !== current.id) return
     // 原位更新任务主体；若已进入终态则轮询逻辑下一轮自然停止
     detail.value = detail.value ? { ...detail.value, task: updated } : null
     emit('updated', updated)
@@ -183,6 +191,7 @@ async function onRetry(): Promise<void> {
   actionError.value = ''
   try {
     const newTask = await taskApi.retry(current.id)
+    if (props.taskId !== current.id) return
     emit('retried', newTask)
   } catch (e) {
     actionError.value = e instanceof ApiError ? e.message : '重试任务失败'
@@ -280,7 +289,8 @@ async function onRetry(): Promise<void> {
       </div>
 
       <!-- 操作行：取消 / 重试按状态条件展示 -->
-      <div v-if="canCancel || isCancelRequested || canRetry" class="task-detail__actions">
+      <div v-if="canCancel || isCancelRequested || canRetry || (task.status === 'SUCCEEDED' && task.outputVersion !== null)" class="task-detail__actions">
+        <button v-if="task.status === 'SUCCEEDED' && task.fileId !== null && task.outputVersion !== null" class="task-detail__action-btn" type="button" @click="emit('open-result', task)">打开结果 v{{ task.outputVersion }}</button>
         <button
           v-if="canCancel"
           class="task-detail__action-btn"

@@ -4,9 +4,13 @@ import { aiApi } from '@/api/ai'
 import { fileApi } from '@/api/file'
 import { docxApi } from '@/api/docx'
 import { ApiError } from '@/api/http'
-import type { AiChange, AiPlanStatus, AiReply, AiReplyRequest, DocxStructure, Task } from '@/api/types'
+import type { AiChange, AiPlanStatus, AiReply, AiReplyRequest, AiSession, DocxStructure, Task } from '@/api/types'
 
-interface UsePreviewFlowHooks { onConfirmed: (task: Task) => void }
+interface UsePreviewFlowHooks {
+  onConfirmed: (task: Task) => void
+  onReplySaved?: (sessionId: number, messageId: number, fileId: number | null) => void
+  onContextCleared?: () => void
+}
 export type PreviewMode = 'upload' | 'preview'
 export interface PreviewVersion { fileId: number; versionNo: number; extension: string }
 export function usePreviewFlow(hooks: UsePreviewFlowHooks) {
@@ -22,24 +26,27 @@ export function usePreviewFlow(hooks: UsePreviewFlowHooks) {
   const submitting = ref(false)
   const mutating = ref(false)
   const conflict = ref(false)
+  const restoring = ref(false)
+  const sessionArchived = ref(false)
   const isGenerating = computed(() => submitting.value
     || (reply.value?.runStatus === 'RUNNING' && activeTask.value?.status !== 'FAILED'))
   const isFailed = computed(() => activeTask.value?.status === 'FAILED')
-  const busy = computed(() => isGenerating.value || mutating.value)
-  const canConfirm = computed(() => !busy.value && !conflict.value
+  const busy = computed(() => isGenerating.value || mutating.value || restoring.value || structureLoading.value)
+  const canConfirm = computed(() => !busy.value && !conflict.value && !sessionArchived.value
     && reply.value?.runStatus === 'COMPLETED' && reply.value?.planStatus === 'PENDING'
     && changes.value.length > 0)
-  const canDiscard = computed(() => !busy.value && reply.value?.planStatus === 'PENDING')
+  const canDiscard = computed(() => !busy.value && !sessionArchived.value && reply.value?.planStatus === 'PENDING')
   let pollTimer: ReturnType<typeof setTimeout> | null = null
   let sessionId: number | null = null
   let sessionFileId: number | null = null
   let currentFileId: number | null = null
   let currentInstruction = ''
   let disposed = false
+  let revision = 0
   // Reuse exactly the same payload/key after a transport timeout. The server may have saved the reply.
   let retryIntent: { fileId: number; instruction: string; sessionId: number; body: AiReplyRequest } | null = null
 
-  function displayTask(r: AiReply | null, fileId: number): Task {
+  function displayTask(r: AiReply | null, fileId: number | null): Task {
     const running = !r || r.runStatus === 'RUNNING'
     const failed = r?.runStatus === 'FAILED'
     return {
@@ -61,35 +68,39 @@ export function usePreviewFlow(hooks: UsePreviewFlowHooks) {
     stopPolling()
     if (!disposed) pollTimer = setTimeout(() => { void pollOnce() }, 2000)
   }
-  async function loadVersion(fileId: number, versionNo: number): Promise<void> {
+  async function loadVersion(fileId: number, versionNo: number, request = revision): Promise<void> {
     structureLoading.value = true
     structure.value = null
+    previewVersion.value = null
     structureError.value = ''
     try {
       const version = await fileApi.versionDetail(fileId, versionNo)
-      if (disposed) return
+      if (disposed || request !== revision) return
       previewVersion.value = { fileId, versionNo, extension: version.extension.toLowerCase() }
       // XLSX/PDF/images use the general page preview endpoint; do not call the DOCX-only endpoint.
       if (version.extension.toLowerCase() === 'docx') {
-        structure.value = await docxApi.getStructure(fileId, versionNo)
+        const result = await docxApi.getStructure(fileId, versionNo)
+        if (!disposed && request === revision) structure.value = result
       }
     } catch (error) {
-      structureError.value = error instanceof ApiError ? error.message : '文稿加载失败'
-    } finally { structureLoading.value = false }
+      if (!disposed && request === revision) structureError.value = error instanceof ApiError ? error.message : '文稿加载失败'
+    } finally { if (request === revision) structureLoading.value = false }
   }
-  async function applyReply(r: AiReply, fileId: number): Promise<void> {
-    if (disposed) return
+  async function applyReply(r: AiReply, fileId: number | null, request = revision): Promise<void> {
+    if (disposed || request !== revision) return
     reply.value = r
     activeTask.value = displayTask(r, fileId)
+    if (sessionId !== null) hooks.onReplySaved?.(sessionId, r.message.id, fileId)
     if (r.runStatus === 'RUNNING') { schedulePoll(); return }
     stopPolling()
-    if (r.planStatus === 'CONFIRMED' && r.outputVersion !== null) {
-      await loadVersion(fileId, r.outputVersion)
+    if (fileId !== null && r.planStatus === 'CONFIRMED' && r.outputVersion !== null) {
+      await loadVersion(fileId, r.outputVersion, request)
     }
   }
   async function submit(fileId: number, instruction: string): Promise<void> {
     if (busy.value || disposed) return
     stopPolling()
+    const request = ++revision
     submitting.value = true
     structure.value = null
     previewVersion.value = null
@@ -102,10 +113,11 @@ export function usePreviewFlow(hooks: UsePreviewFlowHooks) {
     activeTask.value = displayTask(null, fileId)
     try {
       if (!retryIntent || retryIntent.fileId !== fileId || retryIntent.instruction !== instruction) {
-        if (sessionId === null || sessionFileId !== fileId) {
+        if (sessionId === null || sessionFileId !== fileId || sessionArchived.value) {
           const session = await aiApi.createSession({ title: '工作台编辑', fileId })
           sessionId = session.id
           sessionFileId = fileId
+          sessionArchived.value = false
         }
         const file = await fileApi.detail(fileId)
         retryIntent = {
@@ -118,7 +130,7 @@ export function usePreviewFlow(hooks: UsePreviewFlowHooks) {
       sessionId = retryIntent.sessionId
       const r = await aiApi.generateReply(retryIntent.sessionId, retryIntent.body)
       retryIntent = null
-      await applyReply(r, fileId)
+      await applyReply(r, fileId, request)
     } catch (error) {
       if (error instanceof ApiError && error.code >= 400 && error.code < 500) retryIntent = null
       structureError.value = error instanceof ApiError ? error.message : '生成修改计划失败'
@@ -127,11 +139,15 @@ export function usePreviewFlow(hooks: UsePreviewFlowHooks) {
     } finally { submitting.value = false }
   }
   async function pollOnce(): Promise<void> {
-    if (!reply.value || currentFileId === null || sessionId === null || disposed) return
+    if (!reply.value || sessionId === null || disposed) return
+    const request = revision
+    const fileId = currentFileId
+    const sid = sessionId
+    const messageId = reply.value.message.id
     try {
-      await applyReply(await aiApi.getReply(sessionId, reply.value.message.id), currentFileId)
-      structureError.value = ''
+      await applyReply(await aiApi.getReply(sid, messageId), fileId, request)
     } catch (error) {
+      if (disposed || request !== revision) return
       structureError.value = error instanceof ApiError ? error.message : '回复查询失败'
       if (!(error instanceof ApiError) || ![401, 403, 404].includes(error.code)) schedulePoll()
       else if (activeTask.value) activeTask.value = { ...activeTask.value, status: 'FAILED', errorMessage: structureError.value }
@@ -169,7 +185,60 @@ export function usePreviewFlow(hooks: UsePreviewFlowHooks) {
     } catch (error) { structureError.value = error instanceof ApiError ? error.message : '放弃失败，请稍后重试' }
     finally { mutating.value = false }
   }
-  onBeforeUnmount(() => { disposed = true; stopPolling() })
+
+  function clearContext(): void {
+    revision++
+    stopPolling()
+    reply.value = null
+    activeTask.value = null
+    structure.value = null
+    previewVersion.value = null
+    structureError.value = ''
+    conflict.value = false
+    retryIntent = null
+    currentFileId = null
+    currentInstruction = ''
+    sessionId = null
+    sessionFileId = null
+    sessionArchived.value = false
+  }
+  function reset(): void {
+    if (busy.value) return
+    clearContext()
+    mode.value = 'upload'
+    hooks.onContextCleared?.()
+  }
+  async function openVersion(fileId: number, versionNo: number): Promise<void> {
+    if (busy.value || disposed) return
+    clearContext()
+    currentFileId = fileId
+    mode.value = 'preview'
+    hooks.onContextCleared?.()
+    await loadVersion(fileId, versionNo)
+  }
+  async function restoreReply(sid: number, messageId: number): Promise<AiSession | null> {
+    if (busy.value || disposed) return null
+    clearContext()
+    const request = revision
+    restoring.value = true
+    mode.value = 'preview'
+    try {
+      const [session, r] = await Promise.all([aiApi.getSession(sid), aiApi.getReply(sid, messageId)])
+      if (disposed || request !== revision) return null
+      sessionId = session.id
+      sessionFileId = session.fileId
+      currentFileId = session.fileId
+      sessionArchived.value = session.status === 'ARCHIVED'
+      currentInstruction = '恢复的会话回复'
+      await applyReply(r, session.fileId, request)
+      return session
+    } catch (error) {
+      if (!disposed && request === revision) structureError.value = error instanceof ApiError ? error.message : '会话恢复失败'
+      throw error
+    } finally { if (request === revision) restoring.value = false }
+  }
+  onBeforeUnmount(() => { disposed = true; revision++; stopPolling() })
   return { mode, activeTask, reply, changes, planStatus, structure, previewVersion, structureLoading,
-    structureError, isGenerating, isFailed, busy, canConfirm, canDiscard, submit, back, confirm, discard }
+    structureError, isGenerating, isFailed, busy, canConfirm, canDiscard, sessionArchived,
+    submit, back, confirm, discard, openVersion, restoreReply, reset }
 }

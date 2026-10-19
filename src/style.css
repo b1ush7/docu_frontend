@@ -103,7 +103,7 @@ body::after {
 #app {
   position: relative;
   z-index: 2;
-  min-width: 1280px;
+  min-width: 0;
 }
 
 /* ---- 通用页面结构类 ---- */
