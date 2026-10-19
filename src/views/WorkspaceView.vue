@@ -24,6 +24,7 @@ import TaskCreateDialog from '@/components/workspace/TaskCreateDialog.vue'
 import OcrDialog from '@/components/workspace/OcrDialog.vue'
 import TemplateGenerateDialog from '@/components/workspace/TemplateGenerateDialog.vue'
 import ImageEditDialog from '@/components/workspace/ImageEditDialog.vue'
+import DocxParagraphEditor from '@/components/workspace/DocxParagraphEditor.vue'
 import { useCurrentUser } from '@/composables/useCurrentUser'
 import { usePreviewFlow } from '@/composables/usePreviewFlow'
 import { previewApi } from '@/api/preview'
@@ -45,6 +46,8 @@ const ocrVisible = ref(false)
 const templateVisible = ref(false)
 /** 图片编辑 */
 const imageEditVisible = ref(false)
+/** DOCX 段落编辑 */
+const docxEditVisible = ref(false)
 const navigationLoading = ref(false)
 const downloading = ref(false)
 const displayedSessionId = ref<number | null>(null)
@@ -245,10 +248,10 @@ function onTemplateCreated(file: FileAsset): void {
 }
 
 /**
- * 图片编辑成功：刷新文件列表并切到新版本预览。
- * 编辑会创建一个新版本，必须显式跳到它，否则看到的还是编辑前的内容。
+ * 人工编辑成功（图片编辑 / DOCX 段落编辑）：刷新文件列表并切到新版本预览。
+ * 这类编辑都会创建一个新版本，必须显式跳转，否则看到的还是编辑前的内容。
  */
-async function onImageEdited(version: Version): Promise<void> {
+async function onVersionCreated(version: Version): Promise<void> {
   fileListRef.value?.refresh()
   const current = previewFlow.previewVersion.value
   if (!current) return
@@ -428,6 +431,7 @@ async function onExportPdf(): Promise<void> {
               :can-export="previewFlow.previewVersion.value !== null && !previewFlow.busy.value"
               :can-ocr="['pdf', 'png', 'jpg', 'jpeg'].includes(previewFlow.previewVersion.value?.extension ?? '')"
               :can-image-edit="['png', 'jpg', 'jpeg'].includes(previewFlow.previewVersion.value?.extension ?? '')"
+              :can-edit-docx="previewFlow.previewVersion.value?.extension === 'docx'"
               :busy="previewFlow.busy.value"
               @back="previewFlow.back()"
               @confirm="previewFlow.confirm()"
@@ -435,6 +439,7 @@ async function onExportPdf(): Promise<void> {
               @export="onExportPdf"
               @ocr="ocrVisible = true"
               @image-edit="imageEditVisible = true"
+              @docx-edit="docxEditVisible = true"
             />
           </div>
         </div>
@@ -449,7 +454,13 @@ async function onExportPdf(): Promise<void> {
     v-model="imageEditVisible"
     :file-id="previewFlow.previewVersion.value?.fileId ?? null"
     :version-no="previewFlow.previewVersion.value?.versionNo ?? null"
-    @edited="onImageEdited"
+    @edited="onVersionCreated"
+  />
+  <DocxParagraphEditor
+    v-model="docxEditVisible"
+    :file-id="previewFlow.previewVersion.value?.fileId ?? null"
+    :version-no="previewFlow.previewVersion.value?.versionNo ?? null"
+    @edited="onVersionCreated"
   />
   <OcrDialog
     v-model="ocrVisible"

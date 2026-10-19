@@ -18,6 +18,8 @@ defineProps<{
   canOcr: boolean
   /** 是否允许图片编辑：当前版本是 PNG/JPEG 时可用 */
   canImageEdit: boolean
+  /** 是否允许 DOCX 段落编辑：当前版本是 DOCX 时可用 */
+  canEditDocx: boolean
 }>()
 
 /** 组件对外事件 */
@@ -34,6 +36,8 @@ const emit = defineEmits<{
   (e: 'ocr'): void
   /** 点击图片编辑（仅在 canImageEdit 为 true 时按钮可点击） */
   (e: 'image-edit'): void
+  /** 点击 DOCX 段落编辑（仅在 canEditDocx 为 true 时按钮可点击） */
+  (e: 'docx-edit'): void
 }>()
 </script>
 
@@ -42,6 +46,16 @@ const emit = defineEmits<{
     <!-- 返回修改：次级线框按钮，始终可用 -->
     <button class="preview-actions__btn preview-actions__btn--back" type="button" :disabled="busy" @click="emit('back')">
       返回修改
+    </button>
+
+    <!-- DOCX 段落编辑：替换文本 / 插入删除段落，提交后创建新版本 -->
+    <button
+      class="preview-actions__btn preview-actions__btn--export"
+      type="button"
+      :disabled="!canEditDocx || busy"
+      @click="emit('docx-edit')"
+    >
+      段落编辑
     </button>
 
     <!-- OCR：对 PDF 扫描页或图片做识别，不产生版本 -->
