@@ -1023,3 +1023,86 @@ export interface XlsxFormulaResults {
   results: XlsxFormulaResult[]
 }
 
+// ==================== PDF 原生文本与页面类型（API.md 3.11）====================
+
+/** PDF 单页类型：TEXT 原生文字 / SCANNED 扫描页 / MIXED 混合 / EMPTY 空白 */
+export type PdfPageType = 'TEXT' | 'SCANNED' | 'MIXED' | 'EMPTY'
+
+/** PDF 单页内容与分类 */
+export interface PdfPage {
+  /** 从 1 开始 */
+  pageNo: number
+  type: PdfPageType
+  /** 原生文本；扫描页通常为空 */
+  text: string | null
+  textCharCount: number
+  imageCount: number
+  /** 该页文本是否被截断 */
+  textTruncated: boolean
+}
+
+/**
+ * PDF 原生文本与按页类型检测结果（对应后端 PdfContentVO）。
+ * 扫描页只做标记，**不在此接口执行 OCR**；需要文字请调 OCR 同步接口。
+ */
+export interface PdfContent {
+  fileId: number
+  versionNo: number
+  /** 整份文档的类型判定 */
+  documentType: string | null
+  totalPages: number
+  textPages: number
+  scannedPages: number
+  mixedPages: number
+  emptyPages: number
+  extractedTextChars: number
+  /** 整体文本是否被截断 */
+  textTruncated: boolean
+  pages: PdfPage[]
+}
+
+// ==================== 审计日志（管理员）====================
+
+/** 审计结果 */
+export type AuditResult = 'SUCCESS' | 'FAILURE'
+
+/** 审计日志查询条件；后端固定按时间倒序，不接受前端指定排序字段 */
+export interface AuditQueryParams {
+  /** 默认 1 */
+  page?: number
+  /** 1～100，默认 20 */
+  size?: number
+  /** 操作者用户 ID */
+  userId?: number
+  /** 动作标识，如 USER_DISABLE、ADMIN_FILE_VIEW */
+  action?: string
+  /** 目标类型：USER / FILE / VERSION / TASK / MODEL_CONFIG */
+  targetType?: string
+  /** 目标标识，通常是资源 ID */
+  targetId?: string
+  result?: AuditResult
+  /** 起始时间（含），ISO-8601 本地时间 */
+  from?: string
+  /** 结束时间（含） */
+  to?: string
+  /** 请求链路 ID，可与响应头 X-Request-ID 对应 */
+  requestId?: string
+}
+
+/** 审计日志条目（对应后端 AuditLogVO）；detail 在写入时已脱敏 */
+export interface AuditLog {
+  id: number
+  /** 操作者用户 ID；系统操作为 null */
+  userId: number | null
+  /** 操作者用户名**快照**：用户改名或删除后仍可追溯 */
+  username: string | null
+  action: string
+  targetType: string | null
+  targetId: string | null
+  detail: string | null
+  result: AuditResult
+  requestIp: string | null
+  requestId: string | null
+  createTime: string
+}
+

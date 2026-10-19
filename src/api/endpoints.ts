@@ -246,4 +246,89 @@ export const API_ENDPOINTS = {
      */
     byFile: (fileId: number) => `/task/by-file/${fileId}`,
   },
+  /**
+   * 管理端扩展模块：跨用户版本与文档查看、审计日志。
+   * 基础管理端点（用户/文件/任务 CRUD）仍在 api/admin.js 中，此处只补缺口。
+   */
+  admin: {
+    /**
+     * 任意用户的版本列表
+     * @param fileId 文件 ID
+     */
+    versions: (fileId: number) => `/admin/files/${fileId}/versions`,
+    /**
+     * 任意用户的版本详情
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    versionDetail: (fileId: number, versionNo: number) =>
+      `/admin/files/${fileId}/versions/${versionNo}`,
+    /**
+     * 下载任意用户的指定版本（二进制流）
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    versionDownload: (fileId: number, versionNo: number) =>
+      `/admin/files/${fileId}/versions/${versionNo}/download`,
+    /**
+     * 任意用户版本的 DOCX 结构
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    structure: (fileId: number, versionNo: number) =>
+      `/admin/files/${fileId}/versions/${versionNo}/structure`,
+    /**
+     * 任意用户版本的 XLSX 结构
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    xlsxStructure: (fileId: number, versionNo: number) =>
+      `/admin/files/${fileId}/versions/${versionNo}/xlsx/structure`,
+    /**
+     * 任意用户版本的 XLSX 矩形区域
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    xlsxRange: (fileId: number, versionNo: number) =>
+      `/admin/files/${fileId}/versions/${versionNo}/xlsx/range`,
+    /**
+     * 任意用户版本的 XLSX 公式即时计算
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    xlsxFormulaResults: (fileId: number, versionNo: number) =>
+      `/admin/files/${fileId}/versions/${versionNo}/xlsx/formula-results`,
+    /**
+     * 任意用户版本的 PDF 原生文本与页面类型
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    pdfContent: (fileId: number, versionNo: number) =>
+      `/admin/files/${fileId}/versions/${versionNo}/pdf/content`,
+    /**
+     * 渲染任意用户 PDF 指定页为 PNG
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     * @param pageNo 页码，从 1 开始
+     */
+    pdfPagePreview: (fileId: number, versionNo: number, pageNo: number) =>
+      `/admin/files/${fileId}/versions/${versionNo}/pdf/pages/${pageNo}/preview`,
+    /**
+     * 任意用户版本的预览元信息
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    preview: (fileId: number, versionNo: number) =>
+      `/admin/files/${fileId}/versions/${versionNo}/preview`,
+    /**
+     * 渲染任意用户版本指定页为 PNG
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     * @param pageNo 页码，从 1 开始
+     */
+    pagePreview: (fileId: number, versionNo: number, pageNo: number) =>
+      `/admin/files/${fileId}/versions/${versionNo}/pages/${pageNo}/preview`,
+    /** 审计日志查询（固定时间倒序，不接受前端指定排序字段） */
+    auditLogs: '/admin/audit-logs',
+  },
 } as const
