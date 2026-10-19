@@ -330,5 +330,87 @@ export const API_ENDPOINTS = {
       `/admin/files/${fileId}/versions/${versionNo}/pages/${pageNo}/preview`,
     /** 审计日志查询（固定时间倒序，不接受前端指定排序字段） */
     auditLogs: '/admin/audit-logs',
+    /** 公共模板分页列表（管理员视角，含未启用） */
+    templates: '/admin/templates',
+    /** 新建公共模板（multipart：元数据字段 + file） */
+    templateCreate: '/admin/templates',
+    /**
+     * 公共模板详情
+     * @param id 模板 ID
+     */
+    templateDetail: (id: number) => `/admin/templates/${id}`,
+    /**
+     * 更新模板元数据（JSON body）
+     * @param id 模板 ID
+     */
+    templateUpdate: (id: number) => `/admin/templates/${id}`,
+    /**
+     * 删除模板
+     * @param id 模板 ID
+     */
+    templateDelete: (id: number) => `/admin/templates/${id}`,
+    /**
+     * 启用或停用模板（PUT + query 参数 enabled）
+     * @param id 模板 ID
+     */
+    templateEnabled: (id: number) => `/admin/templates/${id}/enabled`,
+    /**
+     * 替换模板文件内容（multipart：file）
+     * @param id 模板 ID
+     */
+    templateContent: (id: number) => `/admin/templates/${id}/content`,
+    /**
+     * 下载模板当前文件（二进制流）
+     * @param id 模板 ID
+     */
+    templateDownload: (id: number) => `/admin/templates/${id}/download`,
+    /**
+     * 模板内容版本分页列表
+     * @param id 模板 ID
+     */
+    templateVersions: (id: number) => `/admin/templates/${id}/versions`,
+    /**
+     * 下载模板指定内容版本（二进制流）
+     * @param id 模板 ID
+     * @param versionNo 版本号
+     */
+    templateVersionDownload: (id: number, versionNo: number) =>
+      `/admin/templates/${id}/versions/${versionNo}/download`,
+    /**
+     * 恢复到某个内容版本（POST + query 参数 expectVersion）
+     * @param id 模板 ID
+     * @param versionNo 版本号
+     */
+    templateVersionRestore: (id: number, versionNo: number) =>
+      `/admin/templates/${id}/versions/${versionNo}/restore`,
+    /** 模型配置分页列表（密钥仅返回掩码） */
+    modelConfigs: '/admin/model-configs',
+    /** 新建模型配置（初始为停用） */
+    modelConfigCreate: '/admin/model-configs',
+    /**
+     * 模型配置详情
+     * @param id 配置 ID
+     */
+    modelConfigDetail: (id: number) => `/admin/model-configs/${id}`,
+    /**
+     * 更新模型配置（apiKey 留空表示不改）
+     * @param id 配置 ID
+     */
+    modelConfigUpdate: (id: number) => `/admin/model-configs/${id}`,
+    /**
+     * 删除模型配置（默认配置禁止删除）
+     * @param id 配置 ID
+     */
+    modelConfigDelete: (id: number) => `/admin/model-configs/${id}`,
+    /**
+     * 启用或停用模型配置
+     * @param id 配置 ID
+     */
+    modelConfigStatus: (id: number) => `/admin/model-configs/${id}/status`,
+  },
+  /** 公共模板（只读，仅返回已启用模板及其变量定义） */
+  template: {
+    /** 可生成的已启用 DOCX 模板列表 */
+    list: '/templates',
   },
 } as const

@@ -1106,3 +1106,175 @@ export interface AuditLog {
   createTime: string
 }
 
+// ==================== 公共模板（API.md 3.1 模板 / 7.12 ～ 7.13 管理）====================
+
+/**
+ * 公共模板出参（对应后端 DocTemplateVO）。
+ * 刻意不含 storageKey —— 存储标识属于服务端内部信息。
+ */
+export interface DocTemplate {
+  id: number
+  /** 模板标识，字母/数字/下划线/连字符，最长 64 */
+  code: string
+  /** 模板名称，最长 128 */
+  name: string
+  /** 分类，最长 32 */
+  category: string | null
+  /** 用途说明，最长 500 */
+  description: string | null
+  originalName: string | null
+  contentType: string | null
+  extension: string | null
+  sizeBytes: number | null
+  /** 内容版本号：替换或恢复文件时递增，改元数据不递增 */
+  versionNo: number
+  /** 变量定义 JSON 字符串，前端解析后渲染表单 */
+  variables: string | null
+  enabled: boolean
+  createTime: string
+  updateTime: string
+  /** 是否已上传模板文件；无文件的模板不能用于生成 */
+  hasFile: boolean
+}
+
+/** 模板内容版本（对应后端 DocTemplateVersionVO，不含存储标识与变量定义） */
+export interface DocTemplateVersion {
+  templateId: number
+  versionNo: number
+  originalName: string | null
+  contentType: string | null
+  extension: string | null
+  sizeBytes: number | null
+  /** 变更类型，如 UPLOAD / RESTORE */
+  changeType: string | null
+  /** RESTORE 时记录来源版本 */
+  restoredFromVersion: number | null
+  createTime: string
+}
+
+/** 管理员模板列表查询参数（enabled 是字符串 'true'/'false'，留空表示不限） */
+export interface DocTemplateQueryParams {
+  page?: number
+  /** 1～100，默认 20 */
+  size?: number
+  /** 'true' 只查启用，'false' 只查停用，省略表示全部 */
+  enabled?: 'true' | 'false'
+  /** 分类，最长 32 */
+  category?: string
+  /** 按标识或名称模糊搜索，最长 100 */
+  keyword?: string
+}
+
+/** 新建/更新模板的元数据（模板文件通过 multipart 的 file 字段单独提交） */
+export interface SaveDocTemplateParams {
+  /** 模板标识，`^[A-Za-z0-9_-]+$`，最长 64 */
+  code: string
+  /** 模板名称，最长 128 */
+  name: string
+  category?: string
+  description?: string
+  /**
+   * 变量定义 JSON 数组字符串，最长 20000。
+   * 这里只是字符串：结构合法性由后端 TemplateVariables 校验，
+   * 非法结构会在生成文档时才暴露，所以必须在存入前校验。
+   */
+  variables?: string
+}
+
+/** 模板内容版本列表查询参数 */
+export interface TemplateVersionQueryParams {
+  page?: number
+  /** 1～100，默认 20 */
+  size?: number
+}
+
+// ==================== 模型配置（API.md 7 章管理员）====================
+
+/** 模型用途 */
+export type ModelConfigScope = 'TEXT' | 'IMAGE' | 'OCR'
+
+/** 模型配置状态 */
+export type ModelConfigStatus = 'ENABLED' | 'DISABLED'
+
+/**
+ * 模型配置出参（对应后端 ModelConfigVO）。
+ *
+ * **密钥只写不读**：后端出参刻意不含密文与提示位，只有 `apiKeyConfigured`
+ * 与 `apiKeyMasked`（形如 `sk-a****z9x1`），不足以还原密钥。
+ * 未配置主密钥时 `apiKeyMasked` 可能为 null，但 `apiKeyConfigured` 仍为 true。
+ */
+export interface ModelConfig {
+  id: number
+  /** 配置标识，字母/数字/下划线/连字符，最长 64 */
+  code: string
+  /** 配置名称，最长 128 */
+  name: string
+  scope: ModelConfigScope
+  /** 服务商标识，最长 32 */
+  provider: string
+  /** OpenAI 兼容端点，最长 512 */
+  baseUrl: string | null
+  /** 模型名，最长 128 */
+  modelName: string
+  /** 1～600 秒 */
+  timeoutSeconds: number | null
+  /** 输出长度上限 */
+  maxOutputTokens: number | null
+  /** 0～2 */
+  temperature: number | null
+  status: ModelConfigStatus
+  /** 是否为该用途下的默认配置 */
+  isDefault: boolean
+  remark: string | null
+  createTime: string
+  updateTime: string
+  /** 是否已配置密钥 */
+  apiKeyConfigured: boolean
+  /** 脱敏密钥提示；未配置或无法解密时为 null */
+  apiKeyMasked: string | null
+}
+
+/** 模型配置列表查询参数（scope/status 留空表示不限） */
+export interface ModelConfigQueryParams {
+  page?: number
+  /** 1～100，默认 20 */
+  size?: number
+  scope?: ModelConfigScope
+  status?: ModelConfigStatus
+  /** 按标识或名称模糊搜索，最长 100 */
+  keyword?: string
+}
+
+/** 新建/更新模型配置的请求体（SaveModelConfigDTO） */
+export interface SaveModelConfigParams {
+  /** 配置标识，`^[A-Za-z0-9_-]+$`，最长 64 */
+  code: string
+  /** 配置名称，最长 128 */
+  name: string
+  scope: ModelConfigScope
+  /** 服务商标识，最长 32 */
+  provider: string
+  /** OpenAI 兼容端点，最长 512 */
+  baseUrl?: string
+  /** 模型名，最长 128 */
+  modelName: string
+  /**
+   * API Key 明文，仅在写入时接收；服务端加密后落库，永远不会被回读。
+   * **更新时留空表示保持原有密钥不变。**
+   */
+  apiKey?: string
+  /** 1～600 秒 */
+  timeoutSeconds?: number
+  maxOutputTokens?: number
+  /** 0～2 */
+  temperature?: number
+  /** 是否设为该用途下的默认配置 */
+  isDefault?: boolean
+  remark?: string
+}
+
+/** 启用/停用模型配置的请求体 */
+export interface UpdateModelConfigStatusParams {
+  status: ModelConfigStatus
+}
+
