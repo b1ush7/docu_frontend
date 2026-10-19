@@ -20,6 +20,9 @@ import { docxApi } from '@/api/docx'
 import { ApiError } from '@/api/http'
 import type {
   DocBlock,
+  DocxFootnoteEditOperation,
+  DocxFootnotes,
+  DocxHeaderFooterLinks,
   DocxInlineImageOperation,
   DocxStructure,
   DocxTableOfContents,
@@ -57,6 +60,21 @@ const tocTitle = ref('目录')
 /* ---------- 图片 ---------- */
 const images = ref<DocxInlineImageOperation[]>([])
 
+/* ---------- 页眉页脚 ---------- */
+const hfLinks = ref<DocxHeaderFooterLinks | null>(null)
+const hfSectionNo = ref(1)
+const hfLocation = ref<'HEADER' | 'FOOTER'>('HEADER')
+const hfType = ref<'DEFAULT' | 'FIRST' | 'EVEN'>('DEFAULT')
+const hfLinked = ref(true)
+const hfText = ref('')
+
+/* ---------- 脚注 ---------- */
+const footnotes = ref<DocxFootnotes | null>(null)
+const fnType = ref<'ADD' | 'UPDATE' | 'DELETE'>('ADD')
+const fnTargetBlockId = ref('')
+const fnId = ref<number | null>(null)
+const fnText = ref('')
+
 const paragraphs = computed<DocBlock[]>(
   () => (structure.value?.blocks ?? []).filter((b) => BODY_PARAGRAPH.test(b.blockId)),
 )
@@ -75,6 +93,9 @@ async function load(): Promise<void> {
   try {
     structure.value = await docxApi.getStructure(props.fileId, props.versionNo)
     toc.value = await docxApi.getTableOfContents(props.fileId, props.versionNo)
+    // 页眉页脚与脚注都是只读查询，失败不应阻断整个对话框
+    hfLinks.value = await docxApi.getHeaderFooterLinks(props.fileId, props.versionNo).catch(() => null)
+    footnotes.value = await docxApi.getFootnotes(props.fileId, props.versionNo).catch(() => null)
   } catch (e) {
     error.value = e instanceof ApiError ? e.message : '加载失败'
   } finally {
@@ -160,6 +181,75 @@ async function submitImages(): Promise<void> {
     close()
   } catch (e) {
     error.value = e instanceof ApiError ? e.message : '插入图片失败'
+  } finally {
+    submitting.value = false
+  }
+}
+
+/** 提交页眉页脚链接设置 */
+async function submitHf(): Promise<void> {
+  if (props.fileId === null || props.versionNo === null) return
+  // 取消链接时后端要求给 text；重新链接时必须不传
+  if (!hfLinked.value && !hfText.value.trim()) {
+    ElMessage.warning('取消链接需要填写页眉页脚文本')
+    return
+  }
+  submitting.value = true
+  try {
+    const version = await docxApi.updateHeaderFooterLink(props.fileId, props.versionNo, {
+      sectionNo: hfSectionNo.value,
+      location: hfLocation.value,
+      type: hfType.value,
+      linkedToPrevious: hfLinked.value,
+      text: hfLinked.value ? undefined : hfText.value,
+    })
+    ElMessage.success('已创建新版本')
+    emit('edited', version)
+    close()
+  } catch (e) {
+    error.value = e instanceof ApiError ? e.message : '页眉页脚设置失败'
+  } finally {
+    submitting.value = false
+  }
+}
+
+/** 提交脚注操作 */
+async function submitFootnote(): Promise<void> {
+  if (props.fileId === null || props.versionNo === null) return
+  const op: DocxFootnoteEditOperation = { type: fnType.value }
+  if (fnType.value === 'ADD') {
+    if (!fnTargetBlockId.value) {
+      ElMessage.warning('新增脚注必须选择引用段落')
+      return
+    }
+    if (!fnText.value.trim()) {
+      ElMessage.warning('新增脚注必须填写内容')
+      return
+    }
+    op.targetBlockId = fnTargetBlockId.value
+    op.text = fnText.value
+  } else {
+    if (fnId.value === null) {
+      ElMessage.warning('修改或删除必须填写脚注 ID')
+      return
+    }
+    op.footnoteId = fnId.value
+    if (fnType.value === 'UPDATE') {
+      if (!fnText.value.trim()) {
+        ElMessage.warning('修改脚注必须填写新内容')
+        return
+      }
+      op.text = fnText.value
+    }
+  }
+  submitting.value = true
+  try {
+    const version = await docxApi.editFootnotes(props.fileId, props.versionNo, { operations: [op] })
+    ElMessage.success('已创建新版本')
+    emit('edited', version)
+    close()
+  } catch (e) {
+    error.value = e instanceof ApiError ? e.message : '脚注操作失败'
   } finally {
     submitting.value = false
   }
@@ -272,6 +362,114 @@ function preview(block: DocBlock): string {
             </el-button>
           </div>
         </el-tab-pane>
+
+        <!-- 页眉页脚链接 -->
+        <el-tab-pane label="页眉页脚" name="hf">
+          <p class="tie__hint">
+            第一节没有上一节，所以全部 linked 状态为 false。
+            <strong>取消链接时必须填写文本；重新链接时不传文本。</strong>
+          </p>
+          <el-table v-if="hfLinks" :data="hfLinks.sections" size="small" border max-height="200">
+            <el-table-column prop="sectionNo" label="分节" width="70" />
+            <el-table-column label="页眉（默认/首页/偶数）" min-width="180">
+              <template #default="{ row }">
+                {{ row.defaultHeaderLinked ? '链' : '断' }} / {{ row.firstHeaderLinked ? '链' : '断' }} /
+                {{ row.evenHeaderLinked ? '链' : '断' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="页脚（默认/首页/偶数）" min-width="180">
+              <template #default="{ row }">
+                {{ row.defaultFooterLinked ? '链' : '断' }} / {{ row.firstFooterLinked ? '链' : '断' }} /
+                {{ row.evenFooterLinked ? '链' : '断' }}
+              </template>
+            </el-table-column>
+          </el-table>
+          <p v-else class="tie__hint">页眉页脚状态读取失败或不可用。</p>
+
+          <div class="tie__form">
+            <label class="tie__field">
+              <span>分节序号（1～1000）</span>
+              <el-input-number v-model="hfSectionNo" :min="1" :max="1000" />
+            </label>
+            <label class="tie__field">
+              <span>位置</span>
+              <el-select v-model="hfLocation" class="tie__control">
+                <el-option label="页眉 HEADER" value="HEADER" />
+                <el-option label="页脚 FOOTER" value="FOOTER" />
+              </el-select>
+            </label>
+            <label class="tie__field">
+              <span>类型</span>
+              <el-select v-model="hfType" class="tie__control">
+                <el-option label="默认 DEFAULT" value="DEFAULT" />
+                <el-option label="首页 FIRST" value="FIRST" />
+                <el-option label="偶数 EVEN" value="EVEN" />
+              </el-select>
+            </label>
+            <label class="tie__field tie__field--row">
+              <el-checkbox v-model="hfLinked">链接到上一节</el-checkbox>
+            </label>
+            <label v-if="!hfLinked" class="tie__field tie__field--full">
+              <span>页眉页脚文本（取消链接时必填）</span>
+              <el-input v-model="hfText" type="textarea" :rows="2" />
+            </label>
+          </div>
+
+          <div class="tie__actions">
+            <el-button size="small" @click="close">取消</el-button>
+            <el-button type="primary" size="small" :loading="submitting" @click="submitHf">提交设置</el-button>
+          </div>
+        </el-tab-pane>
+
+        <!-- 脚注 -->
+        <el-tab-pane label="脚注" name="fn">
+          <p class="tie__hint">
+            只列出<strong>被正文引用且可安全识别</strong>的脚注。新增必须选引用段落；修改/删除必须填脚注 ID。
+          </p>
+          <el-table v-if="footnotes" :data="footnotes.footnotes" size="small" border max-height="200">
+            <el-table-column prop="id" label="ID" width="70" />
+            <el-table-column prop="text" label="内容" min-width="220" show-overflow-tooltip />
+            <el-table-column label="引用段落" min-width="200">
+              <template #default="{ row }">{{ (row.referencedBy ?? []).join('，') || '-' }}</template>
+            </el-table-column>
+          </el-table>
+          <p v-else class="tie__hint">脚注读取失败或当前版本没有脚注。</p>
+
+          <div class="tie__form">
+            <label class="tie__field">
+              <span>操作</span>
+              <el-select v-model="fnType" class="tie__control">
+                <el-option label="新增 ADD" value="ADD" />
+                <el-option label="修改 UPDATE" value="UPDATE" />
+                <el-option label="删除 DELETE" value="DELETE" />
+              </el-select>
+            </label>
+            <label v-if="fnType === 'ADD'" class="tie__field">
+              <span>引用段落</span>
+              <el-select v-model="fnTargetBlockId" class="tie__control" filterable placeholder="正文段落">
+                <el-option
+                  v-for="block in paragraphs"
+                  :key="block.blockId"
+                  :label="`${block.blockId} · ${preview(block)}`"
+                  :value="block.blockId"
+                />
+              </el-select>
+            </label>
+            <label v-else class="tie__field">
+              <span>脚注 ID</span>
+              <el-input-number v-model="fnId" :min="1" />
+            </label>
+            <label v-if="fnType !== 'DELETE'" class="tie__field tie__field--full">
+              <span>脚注内容</span>
+              <el-input v-model="fnText" type="textarea" :rows="2" />
+            </label>
+          </div>
+
+          <div class="tie__actions">
+            <el-button size="small" @click="close">取消</el-button>
+            <el-button type="primary" size="small" :loading="submitting" @click="submitFootnote">提交脚注操作</el-button>
+          </div>
+        </el-tab-pane>
       </el-tabs>
     </div>
   </el-dialog>
@@ -315,6 +513,10 @@ function preview(block: DocBlock): string {
 .tie__field--row {
   flex-direction: row;
   align-items: center;
+}
+
+.tie__field--full {
+  grid-column: 1 / -1;
 }
 
 .tie__control {
