@@ -155,6 +155,69 @@ export const API_ENDPOINTS = {
      */
     tableOfContents: (fileId: number, versionNo: number) =>
       `/file/${fileId}/versions/${versionNo}/table-of-contents`,
+    /**
+     * 读取 XLSX 工作表、单元格、样式、公式、合并区域与图表结构
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    xlsxStructure: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/xlsx/structure`,
+    /**
+     * 读取 XLSX 矩形区域（含区域内未创建的空白位置）
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    xlsxRange: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/xlsx/range`,
+    /**
+     * 即时计算 XLSX 区域公式，不保存新版本
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    xlsxFormulaResults: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/xlsx/formula-results`,
+    /**
+     * 修改单元格值或公式并保存为新版本
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    xlsxCellEdits: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/xlsx/cell-edits`,
+    /**
+     * 插入或删除行列并保存为新版本
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    xlsxStructureEdits: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/xlsx/structure-edits`,
+    /**
+     * 新增、重命名或删除工作表并保存为新版本
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    xlsxSheetEdits: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/xlsx/sheet-edits`,
+    /**
+     * 区域排序或设置、清除自动筛选并保存为新版本
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    xlsxDataEdits: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/xlsx/data-edits`,
+    /**
+     * 设置单元格/区域基础格式并保存为新版本
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    xlsxFormats: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/xlsx/formats`,
+    /**
+     * 内嵌图片版本到 XLSX 并保存为新版本
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    xlsxImages: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/xlsx/images`,
   },
   /** 异步任务模块 */
   task: {

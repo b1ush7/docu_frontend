@@ -736,3 +736,290 @@ export interface DocxTableOfContents {
   updateFieldsOnOpen: boolean
 }
 
+// ==================== XLSX 读取与编辑（API.md 3.13 ～ 3.21）====================
+
+/**
+ * 地址规则（后端校验）：
+ * - 单元格：A1 格式，如 `B2`、`$B$2`
+ * - 区域：A1:C3 格式
+ * - 工作表名 1～31 字符
+ * 所有编辑接口都绑定明确版本，每次成功编辑创建一个新版本（整批 operations 只产生一个版本）。
+ */
+
+/** 写入单元格时的值类型 */
+export type XlsxValueType = 'STRING' | 'NUMBER' | 'BOOLEAN' | 'DATE'
+
+/** 区域矩阵中的值类型（额外支持公式与空白） */
+export type XlsxRangeValueType = 'STRING' | 'NUMBER' | 'BOOLEAN' | 'DATE' | 'FORMULA' | 'BLANK'
+
+/** 单元格编辑操作类型 */
+export type XlsxCellEditType = 'SET_VALUE' | 'SET_FORMULA' | 'CLEAR' | 'SET_RANGE' | 'FILL_FORMULA'
+
+/** SET_RANGE 矩阵中的单个值 */
+export interface XlsxRangeCellValue {
+  valueType: XlsxRangeValueType
+  /** 最长 32767；字符串允许为空，数字/布尔/日期不能为空 */
+  value?: string
+}
+
+/** 单元格编辑的单个操作 */
+export interface XlsxCellEditOperation {
+  type: XlsxCellEditType
+  /** 工作表名，1～31 字符 */
+  sheetName: string
+  /** SET_VALUE / SET_FORMULA / CLEAR 使用，A1 格式 */
+  cell?: string
+  /** SET_RANGE / FILL_FORMULA 使用，A1:C3 格式 */
+  range?: string
+  /** SET_VALUE 使用 */
+  valueType?: XlsxValueType
+  /** SET_VALUE 使用；字符串允许空 */
+  value?: string
+  /** SET_FORMULA / FILL_FORMULA 使用；填充公式以区域左上角为基准 */
+  formula?: string
+  /** SET_RANGE 使用；矩阵行列数必须与 range 完全一致，最多 500×500 */
+  values?: XlsxRangeCellValue[][]
+}
+
+/** 修改单元格值或公式请求（3.14） */
+export interface EditXlsxCellsParams {
+  instruction?: string
+  /** 完成编辑后重算整个工作簿并写回公式缓存；默认 false */
+  recalculateFormulas?: boolean
+  /** 1～500 个操作 */
+  operations: XlsxCellEditOperation[]
+}
+
+/** XLSX 结构操作类型 */
+export type XlsxStructureEditType =
+  | 'INSERT_ROWS'
+  | 'DELETE_ROWS'
+  | 'INSERT_COLUMNS'
+  | 'DELETE_COLUMNS'
+
+/** 行列编辑的单个操作 */
+export interface XlsxStructureEditOperation {
+  type: XlsxStructureEditType
+  sheetName: string
+  /** 从 1 开始；行操作表示行号，列操作中 1 表示 A 列 */
+  start: number
+  /** 1～1000 */
+  count: number
+}
+
+/** 插入或删除行列请求（3.15） */
+export interface EditXlsxStructureParams {
+  instruction?: string
+  operations: XlsxStructureEditOperation[]
+}
+
+/** 工作表操作类型 */
+export type XlsxSheetEditType = 'CREATE' | 'RENAME' | 'DELETE'
+
+/** 工作表编辑的单个操作 */
+export interface XlsxSheetEditOperation {
+  type: XlsxSheetEditType
+  /** 目标工作表名（RENAME 时是旧名） */
+  sheetName: string
+  /** RENAME 使用，1～31 字符 */
+  newName?: string
+  /** CREATE 使用，从 1 开始；不传则追加到末尾 */
+  position?: number
+}
+
+/** 新增、重命名或删除工作表请求（3.16） */
+export interface EditXlsxSheetsParams {
+  instruction?: string
+  operations: XlsxSheetEditOperation[]
+}
+
+/** 数据操作类型 */
+export type XlsxDataEditType = 'SORT_RANGE' | 'SET_AUTO_FILTER' | 'CLEAR_AUTO_FILTER'
+
+/** 排序方向 */
+export type XlsxSortDirection = 'ASC' | 'DESC'
+
+/** 数据操作的单个操作 */
+export interface XlsxDataEditOperation {
+  type: XlsxDataEditType
+  sheetName: string
+  /** A1:C3 格式 */
+  range?: string
+  /** SORT_RANGE 使用，绝对列名如 B */
+  keyColumn?: string
+  /** SORT_RANGE 使用 */
+  direction?: XlsxSortDirection
+  /** SORT_RANGE 使用；true 表示区域首行不参与排序 */
+  hasHeader?: boolean
+}
+
+/** 区域排序 / 自动筛选请求（3.17） */
+export interface EditXlsxDataParams {
+  instruction?: string
+  operations: XlsxDataEditOperation[]
+}
+
+/** 水平对齐方式 */
+export type XlsxHorizontalAlignment =
+  | 'GENERAL'
+  | 'LEFT'
+  | 'CENTER'
+  | 'RIGHT'
+  | 'FILL'
+  | 'JUSTIFY'
+  | 'CENTER_SELECTION'
+  | 'DISTRIBUTED'
+
+/** 垂直对齐方式 */
+export type XlsxVerticalAlignment = 'TOP' | 'CENTER' | 'BOTTOM' | 'JUSTIFY' | 'DISTRIBUTED'
+
+/** 边框样式 */
+export type XlsxBorderStyle = 'NONE' | 'THIN' | 'MEDIUM' | 'DASHED' | 'DOTTED' | 'THICK' | 'DOUBLE'
+
+/** 单元格格式的单个操作 */
+export interface XlsxFormatOperation {
+  sheetName: string
+  /** A1 或 A1:C3 格式 */
+  range: string
+  fontName?: string
+  /** 1～409 */
+  fontSize?: number
+  bold?: boolean
+  italic?: boolean
+  /** 6 位十六进制 RGB，可带 # */
+  fontColor?: string
+  horizontalAlignment?: XlsxHorizontalAlignment
+  verticalAlignment?: XlsxVerticalAlignment
+  wrapText?: boolean
+  /** 6 位十六进制 RGB，可带 # */
+  fillColor?: string
+  /** 1～100 字符的数字格式串 */
+  numberFormat?: string
+  borderStyle?: XlsxBorderStyle
+}
+
+/** 设置单元格区域基础格式请求（3.18） */
+export interface FormatXlsxCellsParams {
+  instruction?: string
+  operations: XlsxFormatOperation[]
+}
+
+/** 内嵌图片的单个操作 */
+export interface XlsxImageOperation {
+  sheetName: string
+  /** 锚点单元格，A1 格式 */
+  cell: string
+  imageFileId: number
+  /** 图片版本号（必须明确指定） */
+  imageVersionNo: number
+  /** 1～10000 */
+  widthPixels: number
+  /** 1～10000 */
+  heightPixels: number
+}
+
+/** 内嵌图片到 XLSX 请求（3.21），单次最多 20 张 */
+export interface InsertXlsxImagesParams {
+  instruction?: string
+  operations: XlsxImageOperation[]
+}
+
+/** 单元格样式（对应后端 XlsxStructureVO.Style） */
+export interface XlsxCellStyle {
+  styleIndex: number
+  dataFormat: number
+  dataFormatString: string | null
+  horizontalAlignment: string | null
+  verticalAlignment: string | null
+  wrapText: boolean
+  locked: boolean
+  hidden: boolean
+  fillPattern: string | null
+  fillForegroundColor: number
+  borderTop: string | null
+  borderRight: string | null
+  borderBottom: string | null
+  borderLeft: string | null
+  fontName: string | null
+  fontSize: number
+  bold: boolean
+  italic: boolean
+}
+
+/** 单元格；行列下标从 0 开始，address 为 A1 格式 */
+export interface XlsxCell {
+  address: string
+  rowIndex: number
+  columnIndex: number
+  type: string | null
+  cachedValueType: string | null
+  value: string | null
+  formula: string | null
+  style: XlsxCellStyle | null
+}
+
+/** 工作表内图表；types 例如 BAR、LINE、PIE */
+export interface XlsxChart {
+  index: number
+  title: string | null
+  titleFormula: string | null
+  types: string[]
+}
+
+/** 工作表 */
+export interface XlsxSheet {
+  index: number
+  name: string
+  firstRow: number | null
+  lastRow: number | null
+  mergedRegions: string[]
+  charts: XlsxChart[]
+  cells: XlsxCell[]
+}
+
+/** XLSX 结构响应（对应后端 XlsxStructureVO） */
+export interface XlsxStructure {
+  fileId: number
+  versionNo: number
+  totalSheets: number
+  includedCells: number
+  /** true 表示结构读取有上限，cells 不完整 */
+  truncated: boolean
+  sheets: XlsxSheet[]
+}
+
+/** XLSX 矩形区域响应（对应后端 XlsxRangeVO） */
+export interface XlsxRange {
+  fileId: number
+  versionNo: number
+  sheetName: string
+  range: string
+  firstRow: number
+  firstColumn: number
+  rowCount: number
+  columnCount: number
+  rows: XlsxCell[][]
+}
+
+/** 公式即时计算状态 */
+export type XlsxFormulaStatus = 'OK' | 'ERROR' | 'UNSUPPORTED' | 'EVALUATION_FAILED'
+
+/** 单个单元格的公式计算结果 */
+export interface XlsxFormulaResult {
+  address: string
+  formula: string | null
+  status: XlsxFormulaStatus
+  valueType: string | null
+  value: string | null
+  message: string | null
+}
+
+/** 区域公式即时计算响应（对应后端 XlsxFormulaResultsVO），不使用文件中的旧缓存 */
+export interface XlsxFormulaResults {
+  fileId: number
+  versionNo: number
+  sheetName: string
+  range: string
+  results: XlsxFormulaResult[]
+}
+
