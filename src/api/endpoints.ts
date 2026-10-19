@@ -99,6 +99,62 @@ export const API_ENDPOINTS = {
      */
     compatibilityCheck: (fileId: number, versionNo: number) =>
       `/file/${fileId}/versions/${versionNo}/compatibility-check`,
+    /**
+     * 替换段落文本（整批只创建一个版本）
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    paragraphText: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/paragraph-text`,
+    /**
+     * 插入或删除段落（整批只创建一个版本）
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    paragraphEdits: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/paragraph-edits`,
+    /**
+     * 编辑表格：单元格文本、增删行、行高列宽、合并拆分、重复表头
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    tableEdits: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/table-edits`,
+    /**
+     * 设置段落格式：标题、列表、正文、段前分页
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    paragraphFormats: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/paragraph-formats`,
+    /**
+     * 将已有图片版本以内嵌方式插入段落
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    inlineImages: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/inline-images`,
+    /**
+     * 分节页眉页脚链接状态：GET 查询、POST 设置
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    headerFooterLinks: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/header-footer-links`,
+    /**
+     * 正文脚注：GET 查询、POST 新增/修改/删除
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    footnotes: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/footnotes`,
+    /**
+     * 目录域：GET 查询、POST 插入或刷新
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    tableOfContents: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/table-of-contents`,
   },
   /** 异步任务模块 */
   task: {

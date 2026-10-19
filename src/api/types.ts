@@ -510,3 +510,229 @@ export interface CompatibilityReport {
   issues: CompatibilityIssue[]
 }
 
+// ==================== DOCX 内容编辑（API.md 4.4 ～ 4.11）====================
+
+/**
+ * 块 ID 规则（后端校验，来自各 DTO 的 @Pattern）：
+ * - 正文段落：`body/p1`
+ * - 表格单元格内段落：`body/t0/r1/c0/p2`
+ * - 页眉页脚段落：`header1/p1`、`footer1/p1`
+ * 块 ID 只在单一版本内稳定；编辑产生新版本后必须重新读取结构。
+ */
+
+/** 替换段落文本的单个操作 */
+export interface DocxParagraphTextOperation {
+  /** 目标段落块 ID */
+  blockId: string
+  /** 替换后的文本；允许空字符串清空段落，不允许省略 */
+  text: string
+}
+
+/** 替换段落文本请求（4.4） */
+export interface ReplaceDocxTextParams {
+  /** 编辑说明，最长 2000 */
+  instruction?: string
+  /** 1～100 个操作 */
+  operations: DocxParagraphTextOperation[]
+}
+
+/** 段落编辑操作类型 */
+export type DocxParagraphEditType = 'INSERT_BEFORE' | 'INSERT_AFTER' | 'DELETE'
+
+/** 插入或删除段落的单个操作 */
+export interface DocxParagraphEditOperation {
+  type: DocxParagraphEditType
+  blockId: string
+  /** 插入操作必填；DELETE 操作必须不传 */
+  text?: string
+}
+
+/** 插入或删除段落请求（4.5） */
+export interface EditDocxParagraphsParams {
+  instruction?: string
+  operations: DocxParagraphEditOperation[]
+}
+
+/** 表格编辑操作类型 */
+export type DocxTableEditType =
+  | 'SET_CELL_TEXT'
+  | 'INSERT_ROW_BEFORE'
+  | 'INSERT_ROW_AFTER'
+  | 'DELETE_ROW'
+  | 'SET_ROW_HEIGHT'
+  | 'REPEAT_HEADER_ROW'
+  | 'SET_COLUMN_WIDTH'
+  | 'MERGE_CELLS'
+  | 'SPLIT_CELL'
+
+/** 表格编辑的单个操作 */
+export interface DocxTableEditOperation {
+  type: DocxTableEditType
+  /** 单元格操作指向 CELL，行操作指向 ROW，最长 512 */
+  blockId: string
+  /** MERGE_CELLS 的矩形右下单元格；SPLIT_CELL 不使用 */
+  endBlockId?: string
+  /** SET_CELL_TEXT 使用，允许空字符串清空单元格 */
+  text?: string
+  /** 插入行使用；元素数量必须与参照行列数一致，最多 100 个 */
+  values?: string[]
+  /** SET_COLUMN_WIDTH / SET_ROW_HEIGHT 使用，单位 twips，1～20000 */
+  dimensionTwips?: number
+  /** REPEAT_HEADER_ROW 使用 */
+  repeatHeader?: boolean
+}
+
+/** 编辑表格请求（4.6） */
+export interface EditDocxTableParams {
+  instruction?: string
+  operations: DocxTableEditOperation[]
+}
+
+/** 段落格式操作类型 */
+export type DocxParagraphFormatType =
+  | 'SET_HEADING'
+  | 'SET_NORMAL'
+  | 'SET_BULLET'
+  | 'SET_NUMBERED'
+  | 'CLEAR_LIST'
+  | 'SET_PAGE_BREAK_BEFORE'
+  | 'CLEAR_PAGE_BREAK_BEFORE'
+
+/** 段落格式的单个操作 */
+export interface DocxParagraphFormatOperation {
+  type: DocxParagraphFormatType
+  /** 必须指向正文或表格单元格中的段落 */
+  blockId: string
+  /** 仅 SET_HEADING 使用，1～9 级 */
+  level?: number
+}
+
+/** 设置段落格式请求（4.7） */
+export interface FormatDocxParagraphsParams {
+  instruction?: string
+  operations: DocxParagraphFormatOperation[]
+}
+
+/** 插入内嵌图片的单个操作 */
+export interface DocxInlineImageOperation {
+  /** 目标段落块 ID */
+  blockId: string
+  /** 图片文件 ID */
+  imageFileId: number
+  /** 图片版本号（必须明确指定） */
+  imageVersionNo: number
+  /** 宽度像素，1～10000 */
+  widthPixels: number
+  /** 高度像素，1～10000 */
+  heightPixels: number
+}
+
+/** 插入内嵌图片请求（4.8），单次最多 20 张 */
+export interface InsertDocxImagesParams {
+  instruction?: string
+  operations: DocxInlineImageOperation[]
+}
+
+/** 页眉页脚位置 */
+export type DocxHeaderFooterLocation = 'HEADER' | 'FOOTER'
+
+/** 页眉页脚类型 */
+export type DocxHeaderFooterType = 'DEFAULT' | 'FIRST' | 'EVEN'
+
+/** 设置分节页眉页脚链接请求（4.9） */
+export interface UpdateDocxHeaderFooterLinkParams {
+  /** 分节序号，1～1000 */
+  sectionNo: number
+  location: DocxHeaderFooterLocation
+  type: DocxHeaderFooterType
+  /** 是否链接到上一节 */
+  linkedToPrevious: boolean
+  /** 取消链接时必填；重新链接时必须不传 */
+  text?: string
+  instruction?: string
+}
+
+/** 单个分节的页眉页脚链接状态；第一节没有上一节，全部为 false */
+export interface DocxHeaderFooterSection {
+  sectionNo: number
+  defaultHeaderLinked: boolean
+  firstHeaderLinked: boolean
+  evenHeaderLinked: boolean
+  defaultFooterLinked: boolean
+  firstFooterLinked: boolean
+  evenFooterLinked: boolean
+}
+
+/** 页眉页脚链接状态响应（对应后端 DocxHeaderFooterLinksVO） */
+export interface DocxHeaderFooterLinks {
+  fileId: number
+  versionNo: number
+  totalSections: number
+  sections: DocxHeaderFooterSection[]
+}
+
+/** 脚注操作类型 */
+export type DocxFootnoteEditType = 'ADD' | 'UPDATE' | 'DELETE'
+
+/** 脚注的单个操作 */
+export interface DocxFootnoteEditOperation {
+  type: DocxFootnoteEditType
+  /** ADD 必填，必须是正文或表格单元格中的段落 */
+  targetBlockId?: string
+  /** UPDATE / DELETE 必填 */
+  footnoteId?: number
+  /** ADD / UPDATE 必填，DELETE 不传 */
+  text?: string
+}
+
+/** 编辑脚注请求（4.10），单次最多 50 个操作 */
+export interface EditDocxFootnotesParams {
+  instruction?: string
+  operations: DocxFootnoteEditOperation[]
+}
+
+/** 被正文引用且可安全识别的脚注 */
+export interface DocxFootnote {
+  id: number
+  text: string
+  /** 引用该脚注的段落块 ID 列表 */
+  referencedBy: string[]
+}
+
+/** 脚注查询响应（对应后端 DocxFootnotesVO） */
+export interface DocxFootnotes {
+  fileId: number
+  versionNo: number
+  footnotes: DocxFootnote[]
+}
+
+/** 目录插入位置 */
+export type DocxTocPosition = 'START' | 'END'
+
+/** 插入或刷新目录域的请求（4.11）；后端各字段均有默认值，可全部省略 */
+export interface CreateDocxTableOfContentsParams {
+  /** 默认 END */
+  position?: DocxTocPosition
+  /** 目录标题级别 1～9，默认 3 */
+  maxLevel?: number
+  /** 是否生成超链接，默认 true */
+  hyperlinks?: boolean
+  /** 目录标题，默认「目录」，最长 100 */
+  title?: string
+  instruction?: string
+}
+
+/** 目录域查询响应（对应后端 DocxTableOfContentsVO，只返回检测到的第一个 TOC 域） */
+export interface DocxTableOfContents {
+  fileId: number
+  versionNo: number
+  /** 是否存在 TOC 域 */
+  present: boolean
+  /** TOC 域所在块 ID；不存在时为 null */
+  blockId: string | null
+  /** 域指令；不存在时为 null */
+  instruction: string | null
+  /** 是否要求打开文档时更新域 */
+  updateFieldsOnOpen: boolean
+}
+
