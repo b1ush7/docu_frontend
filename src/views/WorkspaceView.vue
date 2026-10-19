@@ -22,6 +22,7 @@ import VersionHistoryDialog from '@/components/workspace/VersionHistoryDialog.vu
 import AiHistoryDialog from '@/components/workspace/AiHistoryDialog.vue'
 import TaskCreateDialog from '@/components/workspace/TaskCreateDialog.vue'
 import OcrDialog from '@/components/workspace/OcrDialog.vue'
+import TemplateGenerateDialog from '@/components/workspace/TemplateGenerateDialog.vue'
 import { useCurrentUser } from '@/composables/useCurrentUser'
 import { usePreviewFlow } from '@/composables/usePreviewFlow'
 import { previewApi } from '@/api/preview'
@@ -39,6 +40,8 @@ const aiHistoryVisible = ref(false)
 const taskCreateVisible = ref(false)
 /** OCR 对话框：只在当前版本是 PDF 或图片时可用 */
 const ocrVisible = ref(false)
+/** 按模板生成文档 */
+const templateVisible = ref(false)
 const navigationLoading = ref(false)
 const downloading = ref(false)
 const displayedSessionId = ref<number | null>(null)
@@ -227,6 +230,16 @@ function onTaskCreated(task: Task): void {
   if (task.status === 'FAILED') ElMessage.warning('任务已记录但提交失败，请查看任务详情')
   else ElMessage.success('任务已提交，可在左侧查看进度')
 }
+
+/**
+ * 模板生成成功：刷新文件列表并选中新文件。
+ * 生成的是**新文件**（不是既有文件的新版本），所以这里按文件而不是按任务处理。
+ */
+function onTemplateCreated(file: FileAsset): void {
+  fileListRef.value?.refresh()
+  selectedFile.value = file
+  currentFileId.value = file.id
+}
 async function onTaskResult(task: Task): Promise<void> {
   if (task.status !== 'SUCCEEDED' || task.fileId === null || task.outputVersion === null || previewFlow.busy.value || navigationLoading.value) return
   navigationLoading.value = true
@@ -366,6 +379,7 @@ async function onExportPdf(): Promise<void> {
           <el-button size="small" :disabled="!selectedFile || previewFlow.busy.value || navigationLoading" @click="selectedFile && onViewVersions(selectedFile)">版本历史</el-button>
           <el-button size="small" :disabled="previewFlow.busy.value || navigationLoading" @click="aiHistoryVisible = true">AI 会话历史</el-button>
           <el-button size="small" :disabled="!selectedFile || previewFlow.busy.value || navigationLoading" @click="taskCreateVisible = true">转换／导出</el-button>
+          <el-button size="small" :disabled="previewFlow.busy.value || navigationLoading" @click="templateVisible = true">模板生成</el-button>
         </div>
         <p v-if="previewFlow.sessionArchived.value" class="main-area__notice">此会话已归档，仅可查看。需要修改时请返回并创建新的编辑请求。</p>
 
@@ -414,6 +428,7 @@ async function onExportPdf(): Promise<void> {
   <VersionHistoryDialog v-model="historyVisible" :file-id="historyFileId" @preview="onVersionPreview" @restored="onVersionRestored" />
   <AiHistoryDialog v-model="aiHistoryVisible" :file-id="currentFileId" :opening="navigationLoading" @reply="onHistoryReply" @changed="onSessionChanged" />
   <TaskCreateDialog v-model="taskCreateVisible" :file-id="currentFileId" @created="onTaskCreated" />
+  <TemplateGenerateDialog v-model="templateVisible" @created="onTemplateCreated" />
   <OcrDialog
     v-model="ocrVisible"
     :file-id="previewFlow.previewVersion.value?.fileId ?? null"

@@ -1189,6 +1189,23 @@ export interface TemplateVersionQueryParams {
   size?: number
 }
 
+/**
+ * 模板变量定义（`DocTemplate.variables` 解析后的元素，对应后端 TemplateVariables）。
+ *
+ * 后端只强制 `name`，且要求匹配 `^[A-Za-z_][A-Za-z0-9_]*$`、最长 64、同模板内不重复；
+ * `label` / `description` / `required` 都可省略。变量名就是模板里的占位符标识。
+ */
+export interface DocTemplateVariable {
+  /** 变量标识，占位符用它 */
+  name: string
+  /** 展示名，最长 128 */
+  label?: string
+  /** 说明，最长 255 */
+  description?: string
+  /** 是否必填，默认 false */
+  required?: boolean
+}
+
 // ==================== 模型配置（API.md 7 章管理员）====================
 
 /** 模型用途 */
