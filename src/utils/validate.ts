@@ -89,5 +89,5 @@ export function isValidRegisterPassword(password: string): boolean {
  * @returns 位数在 4~8 之间返回 true
  */
 export function isValidCaptchaCode(code: string): boolean {
-  return code.length >= CODE_MIN_LENGTH && code.length <= CODE_MAX_LENGTH
+  return /^\d{4,8}$/.test(code)
 }

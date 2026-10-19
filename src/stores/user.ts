@@ -76,6 +76,7 @@ export const useUserStore = defineStore('user', () => {
 
   /** 登录成功后写入凭证并拉取用户信息 */
   async function applyLogin(result: TokenPair): Promise<void> {
+    user.value = null
     setTokens(result)
     try {
       const res = await getCurrentUser()
@@ -125,6 +126,13 @@ export const useUserStore = defineStore('user', () => {
     return res.data
   }
 
+  async function fetchMe(): Promise<UserInfo> {
+    const res = await getCurrentUser()
+    user.value = res.data
+    persist()
+    return res.data
+  }
+
   // 向 http 层注入 Token 读写能力，支撑自动携带与 401 刷新（§0.5）
   bindAuth({
     getAccessToken: () => tokens.value?.accessToken ?? null,
@@ -153,5 +161,6 @@ export const useUserStore = defineStore('user', () => {
     logout,
     logoutAll,
     clearAuth,
+    fetchMe,
   }
 })

@@ -36,9 +36,11 @@ const pageNo = ref(1)
 const imageUrl = ref('')
 /** 页面图片加载中 */
 const pageLoading = ref(false)
+let generation = 0
+let pageRequest = 0
 
 /** 总页数（pageCount 可能为 null） */
-const totalPages = computed(() => meta.value?.pageCount ?? 0)
+const totalPages = computed(() => meta.value?.pageCount ?? (imageUrl.value ? 1 : 0))
 
 /** 是否可翻页 */
 const canPrev = computed(() => pageNo.value > 1)
@@ -54,37 +56,51 @@ function revokeImage(): void {
 
 /** 加载某页图片 */
 async function loadPage(target: number): Promise<void> {
+  const revision = generation
+  const request = ++pageRequest
+  const fileId = props.fileId
+  const versionNo = props.versionNo
   pageLoading.value = true
   error.value = ''
   try {
-    const blob = await previewApi.getPageImage(props.fileId, props.versionNo, target)
+    const blob = await previewApi.getPageImage(fileId, versionNo, target)
+    if (revision !== generation || request !== pageRequest) return
     revokeImage()
     imageUrl.value = URL.createObjectURL(blob)
     pageNo.value = target
+    if (meta.value?.pageCount == null) {
+      const refreshed = await previewApi.getMeta(fileId, versionNo)
+      if (revision === generation && request === pageRequest) meta.value = refreshed
+    }
   } catch (e) {
     // 503 通常表示服务端未接入渲染后端；422 表示这一页本身无法渲染
-    error.value = e instanceof ApiError ? e.message : '页面渲染失败'
+    if (revision === generation && request === pageRequest) error.value = e instanceof ApiError ? e.message : '页面渲染失败'
   } finally {
-    pageLoading.value = false
+    if (revision === generation && request === pageRequest) pageLoading.value = false
   }
 }
 
 /** 加载元信息，成功后自动渲染第一页 */
 async function loadMeta(): Promise<void> {
+  const revision = ++generation
+  pageRequest++
+  pageNo.value = 1
+  pageLoading.value = false
   loading.value = true
   error.value = ''
   meta.value = null
   revokeImage()
   try {
     const info = await previewApi.getMeta(props.fileId, props.versionNo)
+    if (revision !== generation) return
     meta.value = info
-    if (info.previewable && (info.pageCount ?? 0) > 0) {
+    if (info.previewable && (info.pageCount === null || info.pageCount > 0)) {
       await loadPage(1)
     }
   } catch (e) {
-    error.value = e instanceof ApiError ? e.message : '预览信息加载失败'
+    if (revision === generation) error.value = e instanceof ApiError ? e.message : '预览信息加载失败'
   } finally {
-    loading.value = false
+    if (revision === generation) loading.value = false
   }
 }
 
@@ -113,6 +129,8 @@ watch(
 
 // 卸载时释放对象 URL
 onBeforeUnmount(() => {
+  generation++
+  pageRequest++
   revokeImage()
 })
 </script>

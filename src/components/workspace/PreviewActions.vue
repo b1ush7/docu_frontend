@@ -13,6 +13,7 @@ defineProps<{
   canDiscard: boolean
   /** 是否允许导出 PDF：已渲染出明确版本时才可用 */
   canExport: boolean
+  busy: boolean
 }>()
 
 /** 组件对外事件 */
@@ -31,7 +32,7 @@ const emit = defineEmits<{
 <template>
   <div class="preview-actions">
     <!-- 返回修改：次级线框按钮，始终可用 -->
-    <button class="preview-actions__btn preview-actions__btn--back" type="button" @click="emit('back')">
+    <button class="preview-actions__btn preview-actions__btn--back" type="button" :disabled="busy" @click="emit('back')">
       返回修改
     </button>
 

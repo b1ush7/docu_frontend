@@ -21,7 +21,7 @@ export const fileApi = {
     // 字段名必须为 file，与后端 @RequestParam 约定一致
     form.append('file', file)
     return postData<FileAsset>(API_ENDPOINTS.file.upload, form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
       onUploadProgress: (event) => {
         // event.total 在长度可知时才有值，避免除零
         if (onProgress && event.total) {

@@ -25,7 +25,7 @@ export const previewApi = {
    * @param versionNo 版本号
    */
   getMeta(fileId: number, versionNo: number): Promise<VersionPreviewMeta> {
-    return getData<VersionPreviewMeta>(API_ENDPOINTS.file.preview(fileId, versionNo))
+    return getData<VersionPreviewMeta>(API_ENDPOINTS.file.preview(fileId, versionNo), { timeout: 120000 })
   },
 
   /**
@@ -40,7 +40,7 @@ export const previewApi = {
     const base = API_ENDPOINTS.file.pagePreview(fileId, versionNo, pageNo)
     // dpi 为可选查询参数，不传时由后端使用默认值
     const url = dpi === undefined ? base : `${base}?dpi=${dpi}`
-    return getBlob(url)
+    return getBlob(url, { timeout: 120000 })
   },
 
   /**
@@ -62,7 +62,7 @@ export const previewApi = {
    * @returns PDF 字节流（版本本身是 PDF 时返回原内容）
    */
   exportPdf(fileId: number, versionNo: number): Promise<Blob> {
-    return getBlob(API_ENDPOINTS.file.exportPdf(fileId, versionNo))
+    return getBlob(API_ENDPOINTS.file.exportPdf(fileId, versionNo), { timeout: 120000 })
   },
 
   /**
@@ -73,6 +73,8 @@ export const previewApi = {
   compatibilityCheck(fileId: number, versionNo: number): Promise<CompatibilityReport> {
     return postData<CompatibilityReport>(
       API_ENDPOINTS.file.compatibilityCheck(fileId, versionNo),
+      undefined,
+      { timeout: 180000 },
     )
   },
 }

@@ -22,7 +22,7 @@ export default defineConfig({
         // 向所有 scss 样式块自动注入设计变量模块，
         // 组件内可直接使用 $ink / $paper-base 等变量，无需重复 @use
         additionalData: '@use "@/styles/variables.scss" as *;',
-        api: 'modern-compiler',
+        api: 'modern',
       },
     },
   },

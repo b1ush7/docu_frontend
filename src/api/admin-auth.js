@@ -2,7 +2,7 @@ import request from '../utils/request'
 
 // 登录：成功判定看 code===0；返回 {accessToken, refreshToken, expiresIn, refreshExpiresIn}
 export function login(data, config = {}) {
-  return request.post('/user/login', data, config)
+  return request.post('/user/login', data, { ...config, _skipAuthRefresh: true })
 }
 
 export function fetchMe(config = {}) {

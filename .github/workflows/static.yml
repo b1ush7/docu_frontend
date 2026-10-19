@@ -39,18 +39,16 @@ jobs:
           node-version: 22
           cache: npm
 
-      # 优先用 ci 保证可复现（依赖 lockfile）；lockfile 与 package.json 不同步时回退到 install，
-      # 避免因为一个过期的 lockfile 让整次部署失败
+      # 按锁文件安装依赖，避免部署时静默改变依赖版本。
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
-      # 只跑 vite build，不跑 npm run build。
-      # 原因：npm run build 会先执行 vue-tsc --noEmit 做类型检查，而当前 tsconfig
-      # 没有开启 allowJs、include 也不含 src/**/*.js，但 router/index.ts 导入了
-      # @/utils/preview（.js 文件），strict 模式下会报 TS7016 导致构建失败。
-      # 类型检查应作为独立的质量门禁修好后再加回来，不应该挡住部署。
+      - name: API flow regression
+        run: npm test
+
+      # 类型检查与生产构建均通过后才允许上传。
       - name: Build
-        run: npx vite build
+        run: npm run build
 
       # SPA 回退：GitHub Pages 对未知路径返回 404，
       # 把 index.html 复制为 404.html 后，直接访问 /docu_frontend/login

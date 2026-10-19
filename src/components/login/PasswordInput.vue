@@ -56,10 +56,6 @@ function toggleVisible(isDisabled: boolean): void {
   }
 }
 
-/// 输入框高度（设计稿像素）
-const INPUT_HEIGHT = 37
-/// 右侧切换按钮热区宽度（设计稿像素）
-const TOGGLE_WIDTH = 38
 </script>
 
 <template>
