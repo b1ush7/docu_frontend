@@ -21,6 +21,7 @@ import SidebarSearch from '@/components/workspace/SidebarSearch.vue'
 import VersionHistoryDialog from '@/components/workspace/VersionHistoryDialog.vue'
 import AiHistoryDialog from '@/components/workspace/AiHistoryDialog.vue'
 import TaskCreateDialog from '@/components/workspace/TaskCreateDialog.vue'
+import OcrDialog from '@/components/workspace/OcrDialog.vue'
 import { useCurrentUser } from '@/composables/useCurrentUser'
 import { usePreviewFlow } from '@/composables/usePreviewFlow'
 import { previewApi } from '@/api/preview'
@@ -36,6 +37,8 @@ const historyVisible = ref(false)
 const historyFileId = ref<number | null>(null)
 const aiHistoryVisible = ref(false)
 const taskCreateVisible = ref(false)
+/** OCR 对话框：只在当前版本是 PDF 或图片时可用 */
+const ocrVisible = ref(false)
 const navigationLoading = ref(false)
 const downloading = ref(false)
 const displayedSessionId = ref<number | null>(null)
@@ -395,11 +398,13 @@ async function onExportPdf(): Promise<void> {
               :can-confirm="previewFlow.canConfirm.value"
               :can-discard="previewFlow.canDiscard.value"
               :can-export="previewFlow.previewVersion.value !== null && !previewFlow.busy.value"
+              :can-ocr="['pdf', 'png', 'jpg', 'jpeg'].includes(previewFlow.previewVersion.value?.extension ?? '')"
               :busy="previewFlow.busy.value"
               @back="previewFlow.back()"
               @confirm="previewFlow.confirm()"
               @discard="previewFlow.discard()"
               @export="onExportPdf"
+              @ocr="ocrVisible = true"
             />
           </div>
         </div>
@@ -409,6 +414,12 @@ async function onExportPdf(): Promise<void> {
   <VersionHistoryDialog v-model="historyVisible" :file-id="historyFileId" @preview="onVersionPreview" @restored="onVersionRestored" />
   <AiHistoryDialog v-model="aiHistoryVisible" :file-id="currentFileId" :opening="navigationLoading" @reply="onHistoryReply" @changed="onSessionChanged" />
   <TaskCreateDialog v-model="taskCreateVisible" :file-id="currentFileId" @created="onTaskCreated" />
+  <OcrDialog
+    v-model="ocrVisible"
+    :file-id="previewFlow.previewVersion.value?.fileId ?? null"
+    :version-no="previewFlow.previewVersion.value?.versionNo ?? null"
+    :extension="previewFlow.previewVersion.value?.extension ?? null"
+  />
 </template>
 
 <style scoped lang="scss">

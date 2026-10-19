@@ -14,6 +14,8 @@ defineProps<{
   /** 是否允许导出 PDF：已渲染出明确版本时才可用 */
   canExport: boolean
   busy: boolean
+  /** 是否允许 OCR：当前版本是 PDF 或图片时可用 */
+  canOcr: boolean
 }>()
 
 /** 组件对外事件 */
@@ -26,6 +28,8 @@ const emit = defineEmits<{
   (e: 'discard'): void
   /** 点击导出 PDF（仅在 canExport 为 true 时按钮可点击） */
   (e: 'export'): void
+  /** 点击 OCR 识别（仅在 canOcr 为 true 时按钮可点击） */
+  (e: 'ocr'): void
 }>()
 </script>
 
@@ -34,6 +38,16 @@ const emit = defineEmits<{
     <!-- 返回修改：次级线框按钮，始终可用 -->
     <button class="preview-actions__btn preview-actions__btn--back" type="button" :disabled="busy" @click="emit('back')">
       返回修改
+    </button>
+
+    <!-- OCR：对 PDF 扫描页或图片做识别，不产生版本 -->
+    <button
+      class="preview-actions__btn preview-actions__btn--export"
+      type="button"
+      :disabled="!canOcr || busy"
+      @click="emit('ocr')"
+    >
+      OCR 识别
     </button>
 
     <!-- 导出 PDF：把当前版本导出为 PDF，不影响版本记录 -->
