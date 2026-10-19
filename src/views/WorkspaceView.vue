@@ -10,6 +10,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { logout as apiLogout } from '@/api/auth'
+import { clearTokens } from '@/utils/token'
 import WorkspaceLayout from '@/components/workspace/WorkspaceLayout.vue'
 import FileListPanel from '@/components/workspace/FileListPanel.vue'
 import TaskListPanel from '@/components/workspace/TaskListPanel.vue'
@@ -82,6 +84,27 @@ onMounted(() => {
 const avatarChar = computed(() =>
   user.value?.username ? user.value.username.charAt(0).toUpperCase() : '',
 )
+
+/**
+ * 用户菜单：修改密码 / 退出登录。
+ * 退出时先调后端撤销会话，再清本地凭据；即使请求失败也要清本地，
+ * 否则网络异常时用户无法退出登录。
+ */
+async function onUserCommand(command: string): Promise<void> {
+  if (command === 'password') {
+    router.push('/change-password')
+    return
+  }
+  if (command !== 'logout') return
+  try {
+    await apiLogout()
+  } catch {
+    // 忽略：撤销失败不阻止本地登出
+  }
+  clearTokens()
+  ElMessage.success('已退出登录')
+  router.push('/login')
+}
 
 /** 全局搜索关键字：由 SidebarSearch 防抖后抛出，分发给文件/任务两个列表过滤 */
 const searchKeyword = ref('')
@@ -394,11 +417,19 @@ async function onExportPdf(): Promise<void> {
     <!-- 右侧主内容区：右上角用户信息 + 两种状态（v-show 保活切换，输入草稿不丢失） -->
     <template #main>
       <div class="main-area">
-        <!-- 用户信息条：靠右展示首字占位头像 + 用户名 -->
-        <div class="main-area__userbar" :title="user?.username ?? ''">
-          <span class="main-area__avatar">{{ avatarChar }}</span>
-          <span class="main-area__nickname">{{ user?.username ?? '…' }}</span>
-        </div>
+        <!-- 用户信息条：首字占位头像 + 用户名，点击展开用户菜单 -->
+        <el-dropdown trigger="click" @command="onUserCommand">
+          <span class="main-area__userbar" :title="user?.username ?? ''">
+            <span class="main-area__avatar">{{ avatarChar }}</span>
+            <span class="main-area__nickname">{{ user?.username ?? '…' }}</span>
+          </span>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="password">修改密码</el-dropdown-item>
+              <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <div class="main-area__toolbar">
           <span class="main-area__filename">{{ selectedFile?.displayName || '请选择或上传文件' }}<template v-if="previewFlow.previewVersion.value"> · v{{ previewFlow.previewVersion.value.versionNo }}</template></span>
           <el-button size="small" :disabled="!selectedFile || previewFlow.busy.value || navigationLoading" :loading="downloading" @click="downloadSelected">下载当前版本</el-button>
