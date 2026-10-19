@@ -8,6 +8,7 @@
  *              页面级暂存"当前选中文件 / 任务 ID"，workspace store 接入后迁移到全局状态。
  */
 import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import WorkspaceLayout from '@/components/workspace/WorkspaceLayout.vue'
 import FileListPanel from '@/components/workspace/FileListPanel.vue'
@@ -17,18 +18,43 @@ import MainUploadPanel from '@/components/workspace/MainUploadPanel.vue'
 import PreviewPanel from '@/components/workspace/PreviewPanel.vue'
 import PreviewActions from '@/components/workspace/PreviewActions.vue'
 import SidebarSearch from '@/components/workspace/SidebarSearch.vue'
+import VersionHistoryDialog from '@/components/workspace/VersionHistoryDialog.vue'
+import AiHistoryDialog from '@/components/workspace/AiHistoryDialog.vue'
+import TaskCreateDialog from '@/components/workspace/TaskCreateDialog.vue'
 import { useCurrentUser } from '@/composables/useCurrentUser'
 import { usePreviewFlow } from '@/composables/usePreviewFlow'
 import { previewApi } from '@/api/preview'
+import { fileApi } from '@/api/file'
+import { saveBlob, versionFileName } from '@/utils/download'
 import { ApiError } from '@/api/http'
-import type { FileAsset, Task } from '@/api/types'
+import type { FileAsset, Task, Version } from '@/api/types'
+
+const router = useRouter()
+const route = useRoute()
+const selectedFile = ref<FileAsset | null>(null)
+const historyVisible = ref(false)
+const historyFileId = ref<number | null>(null)
+const aiHistoryVisible = ref(false)
+const taskCreateVisible = ref(false)
+const navigationLoading = ref(false)
+const downloading = ref(false)
+const displayedSessionId = ref<number | null>(null)
+function routeContext(context: { file?: number; version?: number; aiSession?: number; reply?: number } = {}): void {
+  void router.replace({ query: { ...route.query, file: undefined, version: undefined, aiSession: undefined, reply: undefined, ...context } }).catch(() => {})
+}
+function positiveId(value: unknown): number | null {
+  if (typeof value !== 'string' || !/^[1-9]\d*$/.test(value)) return null
+  const id = Number(value)
+  return Number.isSafeInteger(id) ? id : null
+}
 
 // 当前登录用户（模块级单例，会话内仅请求一次 /user/me；后端暂无昵称/头像字段，以 username 展示）
 const { user, fetchUser } = useCurrentUser()
 
 // 首次进入工作台即拉取用户信息（主区右上角展示）
 onMounted(() => {
-  fetchUser()
+  void fetchUser()
+  void restoreLocation()
 })
 
 /** 头像占位字符：用户名首字大写（无头像图片字段时的圆形文字占位） */
@@ -62,7 +88,13 @@ const previewFlow = usePreviewFlow({
     fileListRef.value?.refresh()
     // 已确认任务的输出在任务列表中同步呈现最新状态
     taskListRef.value?.refresh()
-    console.info('[workspace] 版本已确认：', task.outputVersion)
+    if (task.fileId !== null) void fileApi.detail(task.fileId).then(file => {
+      if (currentFileId.value === file.id) selectedFile.value = file
+    }).catch(() => {})
+  },
+  onReplySaved: (sessionId, messageId, fileId) => {
+    displayedSessionId.value = sessionId
+    routeContext({ aiSession: sessionId, reply: messageId, ...(fileId !== null ? { file: fileId } : {}) })
   },
 })
 
@@ -70,11 +102,15 @@ const previewFlow = usePreviewFlow({
  * 列表内点击文件项：记录选中 ID 并刷新相关任务
  * @param file 被选中的文件资产
  */
-function onFileSelect(file: FileAsset): void {
-  if (previewFlow.busy.value) return
+async function onFileSelect(file: FileAsset): Promise<void> {
+  if (previewFlow.busy.value || navigationLoading.value) return
+  selectedFile.value = file
   currentFileId.value = file.id
   // 文件切换后原选中任务大概率不属于新文件，重置任务选中态
   currentTaskId.value = null
+  displayedSessionId.value = null
+  routeContext({ file: file.id, version: file.latestVersion })
+  await previewFlow.openVersion(file.id, file.latestVersion)
   // 任务列表随 currentFileId 变化自动重新拉取（组件内 watch）
 }
 
@@ -86,6 +122,10 @@ function onMainUploadSuccess(file: FileAsset): void {
   // 列表面板刷新，让新文件出现在列表中
   fileListRef.value?.refresh()
   currentFileId.value = file.id
+  selectedFile.value = file
+  previewFlow.reset()
+  displayedSessionId.value = null
+  routeContext()
 }
 
 /**
@@ -98,16 +138,107 @@ function onFileDeleted(fileId: number): void {
     currentFileId.value = null
     // 该文件相关任务一并退出选中态
     currentTaskId.value = null
+    selectedFile.value = null
+    previewFlow.reset()
+    displayedSessionId.value = null
+    routeContext()
   }
 }
 
 /**
- * 查看版本历史（版本面板接入前为占位）
+ * 打开服务端版本历史。
  * @param file 目标文件
  */
 function onViewVersions(file: FileAsset): void {
-  // TODO 版本历史面板接入后实现
-  console.info('[workspace] 查看版本历史：', file.displayName)
+  if (previewFlow.busy.value || navigationLoading.value) return
+  historyFileId.value = file.id
+  historyVisible.value = true
+}
+
+async function onVersionPreview(file: FileAsset, version: Version): Promise<void> {
+  if (previewFlow.busy.value || navigationLoading.value) return
+  selectedFile.value = file
+  currentFileId.value = file.id
+  currentTaskId.value = null
+  displayedSessionId.value = null
+  historyVisible.value = false
+  routeContext({ file: file.id, version: version.versionNo })
+  await previewFlow.openVersion(file.id, version.versionNo)
+}
+async function onVersionRestored(file: FileAsset, version: Version): Promise<void> {
+  fileListRef.value?.refresh()
+  await onVersionPreview(file, version)
+}
+async function downloadSelected(): Promise<void> {
+  if (!selectedFile.value || downloading.value || previewFlow.busy.value) return
+  downloading.value = true
+  const asset = selectedFile.value
+  const preview = previewFlow.previewVersion.value
+  const versionNo = preview?.fileId === asset.id ? preview.versionNo : asset.latestVersion
+  try {
+    const version = await fileApi.versionDetail(asset.id, versionNo)
+    const blob = await fileApi.downloadVersion(asset.id, versionNo)
+    saveBlob(blob, versionFileName(asset.displayName, versionNo, version.extension))
+  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '下载失败') }
+  finally { downloading.value = false }
+}
+async function onHistoryReply(sessionId: number, messageId: number): Promise<void> {
+  if (previewFlow.busy.value || navigationLoading.value) return
+  navigationLoading.value = true
+  try {
+    const session = await previewFlow.restoreReply(sessionId, messageId)
+    if (!session) return
+    currentFileId.value = session.fileId
+    selectedFile.value = session.fileId !== null ? await fileApi.detail(session.fileId) : null
+    currentTaskId.value = null
+    aiHistoryVisible.value = false
+  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '会话恢复失败') }
+  finally { navigationLoading.value = false }
+}
+function onSessionChanged(sessionId: number): void {
+  if (displayedSessionId.value === sessionId) {
+    previewFlow.reset()
+    displayedSessionId.value = null
+    routeContext()
+  }
+}
+async function restoreLocation(): Promise<void> {
+  const sid = positiveId(route.query.aiSession)
+  const replyId = positiveId(route.query.reply)
+  if (sid !== null && replyId !== null) { await onHistoryReply(sid, replyId); return }
+  const fileId = positiveId(route.query.file)
+  const versionNo = positiveId(route.query.version)
+  if (fileId === null || versionNo === null) return
+  navigationLoading.value = true
+  try {
+    const file = await fileApi.detail(fileId)
+    selectedFile.value = file
+    currentFileId.value = fileId
+    await previewFlow.openVersion(fileId, versionNo)
+  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '恢复文档失败'); routeContext() }
+  finally { navigationLoading.value = false }
+}
+function onTaskCreated(task: Task): void {
+  currentTaskId.value = task.id
+  taskListRef.value?.refresh()
+  if (task.status === 'FAILED') ElMessage.warning('任务已记录但提交失败，请查看任务详情')
+  else ElMessage.success('任务已提交，可在左侧查看进度')
+}
+async function onTaskResult(task: Task): Promise<void> {
+  if (task.status !== 'SUCCEEDED' || task.fileId === null || task.outputVersion === null || previewFlow.busy.value || navigationLoading.value) return
+  navigationLoading.value = true
+  try {
+    const file = await fileApi.detail(task.fileId)
+    const version = await fileApi.versionDetail(task.fileId, task.outputVersion)
+    selectedFile.value = file
+    currentFileId.value = file.id
+    displayedSessionId.value = null
+    routeContext({ file: file.id, version: version.versionNo })
+    await previewFlow.openVersion(file.id, version.versionNo)
+    currentTaskId.value = task.id
+    fileListRef.value?.refresh()
+  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '打开任务结果失败') }
+  finally { navigationLoading.value = false }
 }
 
 /**
@@ -131,6 +262,7 @@ function onTaskUpdated(task: Task): void {
   if (key !== lastPolledTaskKey) {
     lastPolledTaskKey = key
     taskListRef.value?.refresh()
+    if (task.status === 'SUCCEEDED') fileListRef.value?.refresh()
   }
 }
 
@@ -168,12 +300,7 @@ async function onExportPdf(): Promise<void> {
   }
   try {
     const blob = await previewApi.exportPdf(current.fileId, current.versionNo)
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${current.fileId}-v${current.versionNo}.pdf`
-    link.click()
-    URL.revokeObjectURL(url)
+    saveBlob(blob, versionFileName(selectedFile.value?.displayName || 'document', current.versionNo, 'pdf'))
   } catch (e) {
     // 503 表示服务端未接入渲染后端；400 表示该格式不支持导出
     ElMessage.error(e instanceof ApiError ? e.message : '导出 PDF 失败')
@@ -194,6 +321,7 @@ async function onExportPdf(): Promise<void> {
         ref="fileListRef"
         :current-file-id="currentFileId"
         :keyword="searchKeyword"
+        :disabled="previewFlow.busy.value || navigationLoading"
         @select="onFileSelect"
         @deleted="onFileDeleted"
         @view-versions="onViewVersions"
@@ -217,6 +345,7 @@ async function onExportPdf(): Promise<void> {
         :task-id="currentTaskId"
         @updated="onTaskUpdated"
         @retried="onTaskRetried"
+        @open-result="onTaskResult"
       />
     </template>
 
@@ -228,12 +357,22 @@ async function onExportPdf(): Promise<void> {
           <span class="main-area__avatar">{{ avatarChar }}</span>
           <span class="main-area__nickname">{{ user?.username ?? '…' }}</span>
         </div>
+        <div class="main-area__toolbar">
+          <span class="main-area__filename">{{ selectedFile?.displayName || '请选择或上传文件' }}<template v-if="previewFlow.previewVersion.value"> · v{{ previewFlow.previewVersion.value.versionNo }}</template></span>
+          <el-button size="small" :disabled="!selectedFile || previewFlow.busy.value || navigationLoading" :loading="downloading" @click="downloadSelected">下载当前版本</el-button>
+          <el-button size="small" :disabled="!selectedFile || previewFlow.busy.value || navigationLoading" @click="selectedFile && onViewVersions(selectedFile)">版本历史</el-button>
+          <el-button size="small" :disabled="previewFlow.busy.value || navigationLoading" @click="aiHistoryVisible = true">AI 会话历史</el-button>
+          <el-button size="small" :disabled="!selectedFile || previewFlow.busy.value || navigationLoading" @click="taskCreateVisible = true">转换／导出</el-button>
+        </div>
+        <p v-if="previewFlow.sessionArchived.value" class="main-area__notice">此会话已归档，仅可查看。需要修改时请返回并创建新的编辑请求。</p>
 
         <div class="main-area__body">
           <!-- 状态一：上传与目标要求输入 -->
           <div v-show="previewFlow.mode.value === 'upload'" class="main-area__state">
             <MainUploadPanel
               :has-file="currentFileId !== null"
+              :file-name="selectedFile?.displayName"
+              :busy="previewFlow.busy.value || navigationLoading"
               @uploaded="onMainUploadSuccess"
               @submit="onSubmitInstruction"
             />
@@ -266,6 +405,9 @@ async function onExportPdf(): Promise<void> {
       </div>
     </template>
   </WorkspaceLayout>
+  <VersionHistoryDialog v-model="historyVisible" :file-id="historyFileId" @preview="onVersionPreview" @restored="onVersionRestored" />
+  <AiHistoryDialog v-model="aiHistoryVisible" :file-id="currentFileId" :opening="navigationLoading" @reply="onHistoryReply" @changed="onSessionChanged" />
+  <TaskCreateDialog v-model="taskCreateVisible" :file-id="currentFileId" @created="onTaskCreated" />
 </template>
 
 <style scoped lang="scss">
@@ -275,6 +417,9 @@ async function onExportPdf(): Promise<void> {
   flex-direction: column;
   height: 100%;
 }
+.main-area__toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 16px; border-bottom: 1px solid $line; }
+.main-area__filename { flex: 1; min-width: 140px; overflow-wrap: anywhere; }
+.main-area__notice { padding: 8px 16px; margin: 0; }
 
 .main-area__userbar {
   display: flex;

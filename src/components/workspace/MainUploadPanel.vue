@@ -16,6 +16,8 @@ import type { FileAsset } from '@/api/types'
 defineProps<{
   /** 是否已具备可编辑文件：未上传且未选中文件时禁用"生成文稿" */
   hasFile?: boolean
+  fileName?: string
+  busy?: boolean
 }>()
 
 /** 组件对外事件 */
@@ -73,7 +75,7 @@ function clearInstructionError(): void {
     <button
       class="upload-panel__upload-btn"
       type="button"
-      :disabled="uploading"
+      :disabled="uploading || busy"
       @click="triggerFileSelect"
     >
       <svg
@@ -114,6 +116,7 @@ function clearInstructionError(): void {
 
     <!-- 目标要求输入区 -->
     <section class="upload-panel__instruction">
+      <p v-if="hasFile">当前文件：{{ fileName || '已选中文件' }}。新的 AI 修改将基于该文件最新版本。</p>
       <label class="upload-panel__label" for="goal-input">目标要求：</label>
       <textarea
         id="goal-input"
@@ -127,7 +130,7 @@ function clearInstructionError(): void {
       <button
         class="upload-panel__submit-btn"
         type="button"
-        :disabled="uploading || !instruction.trim() || !hasFile"
+        :disabled="uploading || busy || !instruction.trim() || !hasFile"
         @click="submitInstruction"
       >
         生成文稿

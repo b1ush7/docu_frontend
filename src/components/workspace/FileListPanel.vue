@@ -20,6 +20,7 @@ const props = defineProps<{
   currentFileId?: number | null
   /** 全局搜索关键字：来自侧边栏顶部搜索框（防抖后的值），空串/undefined 表示不过滤 */
   keyword?: string
+  disabled?: boolean
 }>()
 
 /** 组件对外事件 */
@@ -117,6 +118,7 @@ function refresh(): void {
  * @param file 被点击的文件资产
  */
 function selectFile(file: FileAsset): void {
+  if (props.disabled) return
   // 若有行正在重命名，先退出编辑态，避免点击目标切换后残留输入框
   cancelRename()
   emit('select', file)
@@ -138,6 +140,7 @@ const renameError = ref('')
  * @param file 目标文件
  */
 function startRename(file: FileAsset): void {
+  if (props.disabled) return
   renamingId.value = file.id
   renameDraft.value = file.displayName
   renameError.value = ''
@@ -156,6 +159,7 @@ function cancelRename(): void {
  * 回车与失焦都会触发本方法，进入时先退出编辑态以防止重复提交。
  */
 async function confirmRename(): Promise<void> {
+  if (props.disabled) return
   const id = renamingId.value
   // 已不在编辑态（如 esc 取消后的失焦）则忽略
   if (id === null) {
@@ -198,6 +202,7 @@ let deleteConfirmTimer: ReturnType<typeof setTimeout> | null = null
  * @param file 目标文件
  */
 function onDeleteClick(file: FileAsset): void {
+  if (props.disabled) return
   // 首次点击：进入确认态并启动自动复位计时
   if (deleteConfirmId.value !== file.id) {
     deleteConfirmId.value = file.id
@@ -262,7 +267,7 @@ function iconType(file: FileAsset): 'doc' | 'sheet' | 'pdf' | 'image' | 'file' {
 }
 
 /**
- * 查看版本历史：抛给父组件处理（版本面板接入前为占位）
+ * 查看版本历史：由工作台打开版本历史弹窗。
  * @param file 目标文件
  */
 function onViewVersions(file: FileAsset): void {
@@ -378,6 +383,7 @@ defineExpose({ refresh })
           <div class="file-list__meta">
             <input
               v-if="renamingId === file.id"
+              :disabled="disabled"
               v-model="renameDraft"
               class="file-list__rename-input"
               type="text"
@@ -400,11 +406,12 @@ defineExpose({ refresh })
               :class="{ 'file-list__action--confirm': deleteConfirmId === file.id }"
               type="button"
               @click="onDeleteClick(file)"
+              :disabled="disabled"
             >
               {{ deleteConfirmId === file.id ? '确认删除' : '删除' }}
             </button>
-            <button class="file-list__action" type="button" @click="startRename(file)">重命名</button>
-            <button class="file-list__action" type="button" @click="onViewVersions(file)">历史</button>
+            <button class="file-list__action" type="button" :disabled="disabled" @click="startRename(file)">重命名</button>
+            <button class="file-list__action" type="button" :disabled="disabled" @click="onViewVersions(file)">历史</button>
           </div>
         </div>
 
