@@ -55,9 +55,10 @@
       <el-table-column prop="updateTime" label="更新时间" width="165">
         <template #default="{ row }">{{ formatDateTime(row.updateTime) }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="205" fixed="right">
+      <el-table-column label="操作" width="255" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" size="small" @click="openDetail(row)">详情</el-button>
+          <el-button link type="primary" size="small" @click="openInspect(row)">版本</el-button>
           <el-button link type="primary" size="small" :loading="downloadingId === row.id" @click="onDownload(row)">
             下载
           </el-button>
@@ -129,6 +130,9 @@
         <el-button type="primary" :loading="renameSubmitting" @click="submitRename">确认</el-button>
       </template>
     </el-dialog>
+
+    <!-- 跨用户版本查看：打开时才加载，且会写审计日志，不做轮询 -->
+    <AdminFileInspectDrawer v-model="inspectVisible" :file-id="inspectId" />
   </div>
 </template>
 
@@ -139,6 +143,7 @@ import { Refresh } from '@element-plus/icons-vue'
 import { getFiles, getFileDetail, renameFile, deleteFile, downloadFile, triggerBlobDownload } from '../api/admin'
 import { FILE_STATUS, FILE_SOURCE, enumLabel, enumTag } from '../constants/enums'
 import { formatDateTime, formatBytes } from '../utils/format'
+import AdminFileInspectDrawer from '../components/admin/AdminFileInspectDrawer.vue'
 
 // ============ 列表与筛选 ============
 const list = ref([])
@@ -181,6 +186,16 @@ function onReset() {
 function onSizeChange() {
   page.value = 1
   loadFiles()
+}
+
+// ============ 跨用户版本查看 ============
+const inspectVisible = ref(false)
+const inspectId = ref(null)
+
+/** 打开版本查看抽屉：只在需要时加载，避免列表页顺带触发审计日志 */
+function openInspect(row) {
+  inspectId.value = row.id
+  inspectVisible.value = true
 }
 
 // ============ 详情 ============
