@@ -20,7 +20,8 @@ defineProps<{
   canImageEdit: boolean
   /** 是否允许 DOCX 段落编辑：当前版本是 DOCX 时可用 */
   canEditDocx: boolean
-}>()
+  /** 是否允许 DOCX 段落格式编辑：当前版本是 DOCX 时可用 */
+  canFormatDocx: boolean}>()
 
 /** 组件对外事件 */
 const emit = defineEmits<{
@@ -38,6 +39,8 @@ const emit = defineEmits<{
   (e: 'image-edit'): void
   /** 点击 DOCX 段落编辑（仅在 canEditDocx 为 true 时按钮可点击） */
   (e: 'docx-edit'): void
+  /** 点击 DOCX 段落格式（仅在 canFormatDocx 为 true 时按钮可点击） */
+  (e: 'docx-format'): void
 }>()
 </script>
 
@@ -56,6 +59,16 @@ const emit = defineEmits<{
       @click="emit('docx-edit')"
     >
       段落编辑
+    </button>
+
+    <!-- DOCX 段落格式：标题 / 列表 / 段前分页 -->
+    <button
+      class="preview-actions__btn preview-actions__btn--export"
+      type="button"
+      :disabled="!canFormatDocx || busy"
+      @click="emit('docx-format')"
+    >
+      段落格式
     </button>
 
     <!-- OCR：对 PDF 扫描页或图片做识别，不产生版本 -->

@@ -25,6 +25,7 @@ import OcrDialog from '@/components/workspace/OcrDialog.vue'
 import TemplateGenerateDialog from '@/components/workspace/TemplateGenerateDialog.vue'
 import ImageEditDialog from '@/components/workspace/ImageEditDialog.vue'
 import DocxParagraphEditor from '@/components/workspace/DocxParagraphEditor.vue'
+import DocxFormatEditor from '@/components/workspace/DocxFormatEditor.vue'
 import { useCurrentUser } from '@/composables/useCurrentUser'
 import { usePreviewFlow } from '@/composables/usePreviewFlow'
 import { previewApi } from '@/api/preview'
@@ -48,6 +49,8 @@ const templateVisible = ref(false)
 const imageEditVisible = ref(false)
 /** DOCX 段落编辑 */
 const docxEditVisible = ref(false)
+/** DOCX 段落格式 */
+const docxFormatVisible = ref(false)
 const navigationLoading = ref(false)
 const downloading = ref(false)
 const displayedSessionId = ref<number | null>(null)
@@ -432,6 +435,7 @@ async function onExportPdf(): Promise<void> {
               :can-ocr="['pdf', 'png', 'jpg', 'jpeg'].includes(previewFlow.previewVersion.value?.extension ?? '')"
               :can-image-edit="['png', 'jpg', 'jpeg'].includes(previewFlow.previewVersion.value?.extension ?? '')"
               :can-edit-docx="previewFlow.previewVersion.value?.extension === 'docx'"
+              :can-format-docx="previewFlow.previewVersion.value?.extension === 'docx'"
               :busy="previewFlow.busy.value"
               @back="previewFlow.back()"
               @confirm="previewFlow.confirm()"
@@ -440,6 +444,7 @@ async function onExportPdf(): Promise<void> {
               @ocr="ocrVisible = true"
               @image-edit="imageEditVisible = true"
               @docx-edit="docxEditVisible = true"
+              @docx-format="docxFormatVisible = true"
             />
           </div>
         </div>
@@ -458,6 +463,12 @@ async function onExportPdf(): Promise<void> {
   />
   <DocxParagraphEditor
     v-model="docxEditVisible"
+    :file-id="previewFlow.previewVersion.value?.fileId ?? null"
+    :version-no="previewFlow.previewVersion.value?.versionNo ?? null"
+    @edited="onVersionCreated"
+  />
+  <DocxFormatEditor
+    v-model="docxFormatVisible"
     :file-id="previewFlow.previewVersion.value?.fileId ?? null"
     :version-no="previewFlow.previewVersion.value?.versionNo ?? null"
     @edited="onVersionCreated"
