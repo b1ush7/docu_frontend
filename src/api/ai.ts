@@ -10,6 +10,7 @@ import type {
   AiSession,
   AiSessionListParams,
   AiReplyRequest,
+  AiMessage,
   PageResult,
 } from './types'
 
@@ -50,16 +51,16 @@ export const aiApi = {
    * 会话消息列表（按时间正序）
    * role 取值 USER / ASSISTANT / TOOL / SYSTEM
    */
-  listMessages(sessionId: number): Promise<unknown[]> {
-    return getData<unknown[]>(`/ai/sessions/${sessionId}/messages`)
+  listMessages(sessionId: number): Promise<AiMessage[]> {
+    return getData<AiMessage[]>(`/ai/sessions/${sessionId}/messages`)
   },
 
   /**
    * 追加一条用户消息（**只落库，不生成回复**）
    * 生成回复请使用 generateReply。
    */
-  appendMessage(sessionId: number, content: string): Promise<unknown> {
-    return postData<unknown>(`/ai/sessions/${sessionId}/messages`, { content })
+  appendMessage(sessionId: number, content: string): Promise<AiMessage> {
+    return postData<AiMessage>(`/ai/sessions/${sessionId}/messages`, { content })
   },
 
   /**
@@ -67,7 +68,7 @@ export const aiApi = {
    * 返回后需检查 runStatus / planStatus：HTTP 成功不代表模型执行成功。
    */
   generateReply(sessionId: number, body: AiReplyRequest): Promise<AiReply> {
-    return postData<AiReply>(`/ai/sessions/${sessionId}/replies`, body)
+    return postData<AiReply>(`/ai/sessions/${sessionId}/replies`, body, { timeout: 180000 })
   },
 
   /** 查询回复进度与待确认修改（runStatus=RUNNING 时可重复查询） */
@@ -77,7 +78,7 @@ export const aiApi = {
 
   /** 确认待确认计划：服务端按已保存回复执行，成功后产出新版本 */
   confirmReply(sessionId: number, messageId: number): Promise<AiReply> {
-    return postData<AiReply>(`/ai/sessions/${sessionId}/replies/${messageId}/confirm`)
+    return postData<AiReply>(`/ai/sessions/${sessionId}/replies/${messageId}/confirm`, undefined, { timeout: 120000 })
   },
 
   /** 放弃待确认计划：不生成版本；重复放弃幂等 */

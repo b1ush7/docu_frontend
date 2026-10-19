@@ -85,7 +85,7 @@ const { stageScale, formScale, formFrameEl, cornerProbeEl, edgeGap } = useAuthSt
       aria-hidden="true"
     >Welcome</span>
     <span
-      ref="cornerProbeEl"
+      :ref="(el) => (cornerProbeEl = el as HTMLSpanElement | null)"
       class="auth-page__corner auth-page__corner--probe"
       :style="{ left: `${CORNER_ANCHOR_VW}vw` }"
       aria-hidden="true"
@@ -98,7 +98,7 @@ const { stageScale, formScale, formFrameEl, cornerProbeEl, edgeGap } = useAuthSt
 
     <!-- ============ 表单层：视口居中、重心略偏上，内部按 305 设计稿缩放 ============ -->
     <div class="auth-page__content">
-      <div ref="formFrameEl" class="auth-page__frame">
+      <div :ref="(el) => (formFrameEl = el as HTMLDivElement | null)" class="auth-page__frame">
         <div
           class="auth-page__canvas"
           :style="{

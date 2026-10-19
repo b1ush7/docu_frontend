@@ -274,7 +274,7 @@ export interface TaskDetail {
 // ==================== DOCX 结构 ====================
 
 /** DOCX 结构块类型：段落 / 标题 / 表格 / 表格行 / 单元格 / 图片 */
-export type DocBlockType = 'PARAGRAPH' | 'HEADING' | 'TABLE' | 'ROW' | 'CELL' | 'IMAGE'
+export type DocBlockType = 'PARAGRAPH' | 'HEADING' | 'TABLE' | 'ROW' | 'CELL' | 'IMAGE' | 'HEADER' | 'FOOTER'
 
 /**
  * DOCX 结构块。
@@ -300,6 +300,8 @@ export interface DocBlock {
   sizeBytes: number | null
   /** 子块列表，用于表格等嵌套结构 */
   children: DocBlock[]
+  numberingFormat?: string | null
+  pageBreakBefore?: boolean | null
 }
 
 /** DOCX 结构读取响应 */
@@ -385,6 +387,14 @@ export interface AiChange {
   /** 替换/插入的新文；删除为 null */
   after: string | null
   reason?: string | null
+  image?: { fileId: number; versionNo: number; widthPixels: number; heightPixels: number } | null
+  format?: { type: string; level: number | null } | null
+  beforeFormat?: {
+    styleId: string | null
+    headingLevel: number | null
+    numberingFormat: string | null
+    pageBreakBefore: boolean | null
+  } | null
 }
 
 /** 回复用量与执行信息 */
@@ -395,8 +405,8 @@ export interface AiReplyResult {
   usage: {
     modelCalls: number
     toolCalls: number
-    inputTokens: number
-    outputTokens: number
+    inputTokens: number | null
+    outputTokens: number | null
     estimatedCost: number
     /** false 时 estimatedCost 不代表免费，只是未配置计价 */
     costConfigured: boolean
@@ -417,7 +427,7 @@ export interface AiReply {
   sourceVersion: number | null
   /** 确认后产出的新版本；未确认时为 null */
   outputVersion: number | null
-  result: AiReplyResult
+  result: AiReplyResult | null
   changes: AiChange[]
 }
 

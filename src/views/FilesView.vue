@@ -11,7 +11,6 @@
         @clear="onSearch"
       />
       <el-select v-model="filters.status" placeholder="文件状态" style="width: 140px">
-        <el-option label="全部" value="" />
         <el-option v-for="(v, k) in FILE_STATUS" :key="k" :label="v.label" :value="k" />
       </el-select>
       <el-button type="primary" @click="onSearch">查询</el-button>

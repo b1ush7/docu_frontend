@@ -7,7 +7,9 @@
  *              失败（脱敏错误信息，按风格规范用墨色小字）、就绪（结构渲染）。
  *              "返回修改 / 确认生成"按钮由 PreviewActions 组件承担，不在本组件内。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { changeTypeLabel, changeBefore, changeAfter } from '@/utils/aiChanges'
+import type { PreviewVersion } from '@/composables/usePreviewFlow'
 import { formatBytes } from '@/utils/format'
 import { taskStatusLabel } from '@/constants/task'
 import PagePreview from './PagePreview.vue'
@@ -16,6 +18,7 @@ import { ApiError } from '@/api/http'
 import type {
   AiChange,
   AiPlanStatus,
+  AiReply,
   DocBlock,
   DocxStructure,
   Task,
@@ -30,6 +33,8 @@ const props = defineProps<{
   changes: AiChange[]
   /** 待确认计划状态；只有 CONFIRMED 才会产出新版本 */
   planStatus: AiPlanStatus
+  reply: AiReply | null
+  previewVersion: PreviewVersion | null
   /** 任务成功后读取的输出版本 DOCX 结构 */
   structure: DocxStructure | null
   /** 结构加载中标记 */
@@ -69,32 +74,18 @@ function headingTag(block: DocBlock): string {
  */
 function cellText(cell: DocBlock): string {
   return cell.children
-    .filter((child) => child.type === 'PARAGRAPH')
+    .filter((child) => child.type === 'PARAGRAPH' || child.type === 'HEADING')
     .map((child) => child.text ?? '')
     .join('\n')
 }
 
 /** 修改类型的中文展示名（后端返回的是操作码，前端不做翻译会看不懂） */
-const CHANGE_TYPE_LABELS: Record<string, string> = {
-  REPLACE_TEXT: '替换文本',
-  INSERT_PARAGRAPH: '插入段落',
-  DELETE_PARAGRAPH: '删除段落',
-  INSERT_TABLE: '插入表格',
-  DELETE_TABLE: '删除表格',
-  SET_CELL: '修改单元格',
-  SET_FORMULA: '设置公式',
-  INSERT_IMAGE: '插入图片',
-  SET_FORMAT: '设置格式',
-  RESTORE: '恢复版本',
-}
 
 /**
  * 修改类型展示名；未知类型原样返回，避免新增操作码时显示空白
  * @param type 后端返回的操作码
  */
-function changeTypeLabel(type: string): string {
-  return CHANGE_TYPE_LABELS[type] ?? type
-}
+const currentVersion = computed(() => props.previewVersion ?? props.structure)
 
 /**
  * 预览方式：
@@ -111,6 +102,14 @@ const compareResult = ref<VersionCompareResult | null>(null)
 const compareLoading = ref(false)
 /** 版本比较失败提示 */
 const compareError = ref('')
+let compareRequest = 0
+watch(() => [currentVersion.value?.fileId, currentVersion.value?.versionNo], () => {
+  compareRequest++
+  compareResult.value = null
+  compareError.value = ''
+  compareLoading.value = false
+  viewMode.value = 'page'
+})
 
 /**
  * 加载与上一版本的差异。
@@ -118,22 +117,24 @@ const compareError = ref('')
  * 版本 1 没有上一版，因此不提供该页签。
  */
 async function loadCompare(): Promise<void> {
-  const current = props.structure
+  const current = currentVersion.value
   if (!current || current.versionNo <= 1) {
     return
   }
   compareLoading.value = true
   compareError.value = ''
+  const request = ++compareRequest
   try {
-    compareResult.value = await previewApi.compare(
+    const result = await previewApi.compare(
       current.fileId,
       current.versionNo - 1,
       current.versionNo,
     )
+    if (request === compareRequest) compareResult.value = result
   } catch (e) {
-    compareError.value = e instanceof ApiError ? e.message : '版本比较失败'
+    if (request === compareRequest) compareError.value = e instanceof ApiError ? e.message : '版本比较失败'
   } finally {
-    compareLoading.value = false
+    if (request === compareRequest) compareLoading.value = false
   }
 }
 
@@ -166,13 +167,13 @@ function compareTypeLabel(type: string): string {
     <!-- 标题行：预览文稿 + 版本/状态标识 -->
     <div class="preview-panel__head">
       <h2 class="preview-panel__title">预览文稿</h2>
-      <span v-if="structure" class="preview-panel__version">第 {{ structure.versionNo }} 版</span>
+      <span v-if="currentVersion" class="preview-panel__version">第 {{ currentVersion.versionNo }} 版</span>
       <span v-else-if="isGenerating && task" class="preview-panel__state">
         {{ taskStatusLabel(task.status) }} {{ task.progress }}%
       </span>
 
       <!-- 有版本可预览时才显示切换：版面（真实渲染）/ 结构（块结构）/ 差异（与上一版比较） -->
-      <div v-if="structure" class="preview-panel__tabs" role="tablist">
+      <div v-if="currentVersion" class="preview-panel__tabs" role="tablist">
         <button
           class="preview-panel__tab"
           :class="{ 'preview-panel__tab--active': viewMode === 'page' }"
@@ -184,6 +185,7 @@ function compareTypeLabel(type: string): string {
           版面预览
         </button>
         <button
+          v-if="structure"
           class="preview-panel__tab"
           :class="{ 'preview-panel__tab--active': viewMode === 'structure' }"
           type="button"
@@ -194,7 +196,7 @@ function compareTypeLabel(type: string): string {
           结构预览
         </button>
         <button
-          v-if="structure.versionNo > 1"
+          v-if="currentVersion.versionNo > 1 && ['docx', 'xlsx'].includes(previewVersion?.extension ?? 'docx')"
           class="preview-panel__tab"
           :class="{ 'preview-panel__tab--active': viewMode === 'diff' }"
           type="button"
@@ -206,6 +208,12 @@ function compareTypeLabel(type: string): string {
         </button>
       </div>
     </div>
+
+    <p v-if="structureError" class="preview-panel__hint" role="alert">{{ structureError }}</p>
+    <p v-if="reply?.result?.reply" class="preview-panel__hint">{{ reply.result.reply }}</p>
+    <p v-if="reply?.result?.verificationNotice" class="preview-panel__hint">{{ reply.result.verificationNotice }}</p>
+    <p v-if="reply?.result?.truncated" class="preview-panel__hint">本次读取或输出已截断，请检查修改范围。</p>
+    <p v-if="planStatus === 'DISCARDED'" class="preview-panel__hint">已放弃本次修改，未生成新版本。</p>
 
     <!-- 生成中：进度条 + 当前步骤（轮询驱动） -->
     <template v-if="isGenerating && task">
@@ -238,13 +246,13 @@ function compareTypeLabel(type: string): string {
             <span class="preview-panel__change-type">{{ changeTypeLabel(change.type) }}</span>
             <span class="preview-panel__change-target">{{ change.target }}</span>
           </p>
-          <p v-if="change.before" class="preview-panel__change-before">原：{{ change.before }}</p>
-          <p v-if="change.after" class="preview-panel__change-after">改：{{ change.after }}</p>
+          <p v-if="changeBefore(change)" class="preview-panel__change-before">原：{{ changeBefore(change) }}</p>
+          <p v-if="changeAfter(change)" class="preview-panel__change-after">改：{{ changeAfter(change) }}</p>
           <p v-if="change.reason" class="preview-panel__change-reason">{{ change.reason }}</p>
         </li>
       </ul>
       <p v-else class="preview-panel__hint">
-        模型未返回具体差异，可直接确认或返回修改重新描述要求。
+        未返回可展示的修改，请返回后重新描述要求。
       </p>
     </template>
 
@@ -252,17 +260,16 @@ function compareTypeLabel(type: string): string {
     <p v-else-if="structureLoading" class="preview-panel__hint">文稿加载中…</p>
 
     <!-- 结构加载失败 -->
-    <p v-else-if="structureError" class="preview-panel__hint" role="alert">{{ structureError }}</p>
 
     <!-- 版面预览：拿后端渲染的 PNG，字体/页边距/分页所见即所得 -->
     <PagePreview
-      v-else-if="structure && viewMode === 'page'"
-      :file-id="structure.fileId"
-      :version-no="structure.versionNo"
+      v-else-if="currentVersion && viewMode === 'page'"
+      :file-id="currentVersion.fileId"
+      :version-no="currentVersion.versionNo"
     />
 
     <!-- 与上一版本比较：块/单元格粒度的差异，truncated 时结果不完整 -->
-    <template v-else-if="structure && viewMode === 'diff'">
+    <template v-else-if="currentVersion && viewMode === 'diff'">
       <p v-if="compareLoading" class="preview-panel__hint">版本差异加载中…</p>
       <p v-else-if="compareError" class="preview-panel__hint" role="alert">{{ compareError }}</p>
       <template v-else-if="compareResult">
@@ -287,7 +294,7 @@ function compareTypeLabel(type: string): string {
             <p v-if="change.after" class="preview-panel__change-after">改：{{ change.after }}</p>
           </li>
         </ul>
-        <p v-else class="preview-panel__hint">两个版本内容一致。</p>
+        <p v-else class="preview-panel__hint">未检测到内容差异；字体、图片尺寸等排版变化请查看版面预览。</p>
       </template>
     </template>
 

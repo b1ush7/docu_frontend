@@ -58,6 +58,7 @@ const previewFlow = usePreviewFlow({
    * @param task 被确认的任务
    */
   onConfirmed: (task: Task) => {
+    currentFileId.value = task.fileId
     fileListRef.value?.refresh()
     // 已确认任务的输出在任务列表中同步呈现最新状态
     taskListRef.value?.refresh()
@@ -70,6 +71,7 @@ const previewFlow = usePreviewFlow({
  * @param file 被选中的文件资产
  */
 function onFileSelect(file: FileAsset): void {
+  if (previewFlow.busy.value) return
   currentFileId.value = file.id
   // 文件切换后原选中任务大概率不属于新文件，重置任务选中态
   currentTaskId.value = null
@@ -151,12 +153,7 @@ async function onSubmitInstruction(instruction: string): Promise<void> {
     return
   }
   await previewFlow.submit(currentFileId.value, instruction)
-  // 新任务同步进任务列表并选中，左侧详情随之展示生成进度
-  const task = previewFlow.activeTask.value
-  if (task) {
-    currentTaskId.value = task.id
-    taskListRef.value?.refresh()
-  }
+  // AI message IDs are not /task IDs; keep the asynchronous task selection separate.
 }
 
 /**
@@ -165,7 +162,7 @@ async function onSubmitInstruction(instruction: string): Promise<void> {
  * 否则用户看到的版本和导出的版本可能不是同一份。
  */
 async function onExportPdf(): Promise<void> {
-  const current = previewFlow.structure.value
+  const current = previewFlow.previewVersion.value
   if (!current) {
     return
   }
@@ -248,14 +245,17 @@ async function onExportPdf(): Promise<void> {
               :task="previewFlow.activeTask.value"
               :changes="previewFlow.changes.value"
               :plan-status="previewFlow.planStatus.value"
+              :reply="previewFlow.reply.value"
+              :preview-version="previewFlow.previewVersion.value"
               :structure="previewFlow.structure.value"
               :structure-loading="previewFlow.structureLoading.value"
               :structure-error="previewFlow.structureError.value"
             />
             <PreviewActions
               :can-confirm="previewFlow.canConfirm.value"
-              :can-discard="previewFlow.canConfirm.value"
-              :can-export="previewFlow.structure.value !== null"
+              :can-discard="previewFlow.canDiscard.value"
+              :can-export="previewFlow.previewVersion.value !== null && !previewFlow.busy.value"
+              :busy="previewFlow.busy.value"
               @back="previewFlow.back()"
               @confirm="previewFlow.confirm()"
               @discard="previewFlow.discard()"
