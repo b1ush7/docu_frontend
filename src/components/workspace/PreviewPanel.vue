@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * @component PreviewPanel
  * @description 右侧主内容区"状态二"文稿预览：顶部为"预览文稿"标题与版本标识，
@@ -14,6 +14,7 @@ import { formatBytes } from '@/utils/format'
 import { taskStatusLabel } from '@/constants/task'
 import PagePreview from './PagePreview.vue'
 import CompatCheck from './CompatCheck.vue'
+import XlsxEditor from './XlsxEditor.vue'
 import { previewApi } from '@/api/preview'
 import { ApiError } from '@/api/http'
 import type {
@@ -23,12 +24,12 @@ import type {
   DocBlock,
   DocxStructure,
   Task,
+  Version,
   VersionCompareResult,
 } from '@/api/types'
 
 /** 组件入参 */
-const props = defineProps<{
-  /** 生成当前预览的任务记录；null 表示无任务上下文 */
+const props = defineProps<{  /** 生成当前预览的任务记录；null 表示无任务上下文 */
   task: Task | null
   /** 待确认的内容差异：仅在 planStatus=PENDING 时有值 */
   changes: AiChange[]
@@ -44,6 +45,8 @@ const props = defineProps<{
   structureLoading: boolean
   /** 结构加载失败提示 */
   structureError: string
+  /** XLSX 单元格编辑成功后的回调（父组件切到新版本预览） */
+  onXlsxEdited?: (version: Version) => void
 }>()
 
 /** 是否处于生成中（排队 / 执行） */
@@ -97,7 +100,7 @@ const currentVersion = computed(() => props.previewVersion ?? props.structure)
  *   - diff      与上一版本的块级差异（仅 versionNo > 1 可用）
  * 默认版面预览；服务端未启用渲染时 PagePreview 会自行降级提示，用户可切回结构预览。
  */
-const viewMode = ref<'page' | 'structure' | 'diff' | 'compat'>('page')
+const viewMode = ref<'page' | 'structure' | 'diff' | 'compat' | 'xlsx'>('page')
 
 /** 版本比较结果（仅在切到 diff 时加载） */
 const compareResult = ref<VersionCompareResult | null>(null)
@@ -142,7 +145,7 @@ async function loadCompare(): Promise<void> {
 }
 
 /** 切换到某个预览方式，必要时懒加载对应数据 */
-function switchView(next: 'page' | 'structure' | 'diff' | 'compat'): void {
+function switchView(next: 'page' | 'structure' | 'diff' | 'compat' | 'xlsx'): void {
   viewMode.value = next
   if (next === 'diff' && compareResult.value === null && !compareLoading.value) {
     void loadCompare()
@@ -220,6 +223,18 @@ function compareTypeLabel(type: string): string {
           @click="switchView('compat')"
         >
           兼容性检查
+        </button>
+        <!-- XLSX 结构化查看与单元格编辑 -->
+        <button
+          v-if="(previewVersion?.extension ?? '') === 'xlsx'"
+          class="preview-panel__tab"
+          :class="{ 'preview-panel__tab--active': viewMode === 'xlsx' }"
+          type="button"
+          role="tab"
+          :aria-selected="viewMode === 'xlsx'"
+          @click="switchView('xlsx')"
+        >
+          表格编辑
         </button>
       </div>
     </div>
@@ -321,6 +336,16 @@ function compareTypeLabel(type: string): string {
       :key="`${currentVersion.fileId}-${currentVersion.versionNo}`"
       :file-id="currentVersion.fileId"
       :version-no="currentVersion.versionNo"
+    />
+
+    <!-- XLSX 结构与单元格编辑 -->
+    <XlsxEditor
+      v-else-if="currentVersion && viewMode === 'xlsx'"
+      :key="`${currentVersion.fileId}-${currentVersion.versionNo}`"
+      :model-value="true"
+      :file-id="currentVersion.fileId"
+      :version-no="currentVersion.versionNo"
+      @edited="(v: Version) => props.onXlsxEdited?.(v)"
     />
 
     <!-- 结构预览：按结构块渲染（不依赖服务端渲染能力） -->

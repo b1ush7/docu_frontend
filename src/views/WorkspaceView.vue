@@ -464,6 +464,7 @@ async function onExportPdf(): Promise<void> {
               :structure="previewFlow.structure.value"
               :structure-loading="previewFlow.structureLoading.value"
               :structure-error="previewFlow.structureError.value"
+              :on-xlsx-edited="onVersionCreated"
             />
             <PreviewActions
               :can-confirm="previewFlow.canConfirm.value"
