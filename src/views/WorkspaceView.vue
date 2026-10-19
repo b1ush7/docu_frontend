@@ -26,6 +26,7 @@ import TemplateGenerateDialog from '@/components/workspace/TemplateGenerateDialo
 import ImageEditDialog from '@/components/workspace/ImageEditDialog.vue'
 import DocxParagraphEditor from '@/components/workspace/DocxParagraphEditor.vue'
 import DocxFormatEditor from '@/components/workspace/DocxFormatEditor.vue'
+import DocxTableEditor from '@/components/workspace/DocxTableEditor.vue'
 import { useCurrentUser } from '@/composables/useCurrentUser'
 import { usePreviewFlow } from '@/composables/usePreviewFlow'
 import { previewApi } from '@/api/preview'
@@ -51,6 +52,8 @@ const imageEditVisible = ref(false)
 const docxEditVisible = ref(false)
 /** DOCX 段落格式 */
 const docxFormatVisible = ref(false)
+/** DOCX 表格编辑 */
+const docxTableVisible = ref(false)
 const navigationLoading = ref(false)
 const downloading = ref(false)
 const displayedSessionId = ref<number | null>(null)
@@ -436,6 +439,7 @@ async function onExportPdf(): Promise<void> {
               :can-image-edit="['png', 'jpg', 'jpeg'].includes(previewFlow.previewVersion.value?.extension ?? '')"
               :can-edit-docx="previewFlow.previewVersion.value?.extension === 'docx'"
               :can-format-docx="previewFlow.previewVersion.value?.extension === 'docx'"
+              :can-edit-table="previewFlow.previewVersion.value?.extension === 'docx'"
               :busy="previewFlow.busy.value"
               @back="previewFlow.back()"
               @confirm="previewFlow.confirm()"
@@ -445,6 +449,7 @@ async function onExportPdf(): Promise<void> {
               @image-edit="imageEditVisible = true"
               @docx-edit="docxEditVisible = true"
               @docx-format="docxFormatVisible = true"
+              @table-edit="docxTableVisible = true"
             />
           </div>
         </div>
@@ -469,6 +474,12 @@ async function onExportPdf(): Promise<void> {
   />
   <DocxFormatEditor
     v-model="docxFormatVisible"
+    :file-id="previewFlow.previewVersion.value?.fileId ?? null"
+    :version-no="previewFlow.previewVersion.value?.versionNo ?? null"
+    @edited="onVersionCreated"
+  />
+  <DocxTableEditor
+    v-model="docxTableVisible"
     :file-id="previewFlow.previewVersion.value?.fileId ?? null"
     :version-no="previewFlow.previewVersion.value?.versionNo ?? null"
     @edited="onVersionCreated"

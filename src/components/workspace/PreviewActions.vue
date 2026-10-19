@@ -21,7 +21,9 @@ defineProps<{
   /** 是否允许 DOCX 段落编辑：当前版本是 DOCX 时可用 */
   canEditDocx: boolean
   /** 是否允许 DOCX 段落格式编辑：当前版本是 DOCX 时可用 */
-  canFormatDocx: boolean}>()
+  canFormatDocx: boolean
+  /** 是否允许 DOCX 表格编辑：当前版本是 DOCX 时可用 */
+  canEditTable: boolean}>()
 
 /** 组件对外事件 */
 const emit = defineEmits<{
@@ -41,6 +43,8 @@ const emit = defineEmits<{
   (e: 'docx-edit'): void
   /** 点击 DOCX 段落格式（仅在 canFormatDocx 为 true 时按钮可点击） */
   (e: 'docx-format'): void
+  /** 点击 DOCX 表格编辑（仅在 canEditTable 为 true 时按钮可点击） */
+  (e: 'table-edit'): void
 }>()
 </script>
 
@@ -69,6 +73,16 @@ const emit = defineEmits<{
       @click="emit('docx-format')"
     >
       段落格式
+    </button>
+
+    <!-- DOCX 表格编辑：单元格文本 / 增删行 / 行高列宽 / 合并拆分 / 重复表头 -->
+    <button
+      class="preview-actions__btn preview-actions__btn--export"
+      type="button"
+      :disabled="!canEditTable || busy"
+      @click="emit('table-edit')"
+    >
+      表格编辑
     </button>
 
     <!-- OCR：对 PDF 扫描页或图片做识别，不产生版本 -->
