@@ -24,7 +24,9 @@ import type {
   XlsxCellEditOperation,
   XlsxFormulaResults,
   XlsxRange,
+  XlsxSheetEditOperation,
   XlsxStructure,
+  XlsxStructureEditOperation,
   XlsxValueType,
 } from '@/api/types'
 
@@ -40,7 +42,7 @@ const emit = defineEmits<{
 }>()
 
 /** 面板页签 */
-const tab = ref<'browse' | 'range' | 'edit'>('browse')
+const tab = ref<'browse' | 'range' | 'edit' | 'sheet'>('browse')
 const structure = ref<XlsxStructure | null>(null)
 const loading = ref(false)
 const submitting = ref(false)
@@ -155,6 +157,75 @@ async function submit(): Promise<void> {
 }
 
 const VALUE_TYPES: XlsxValueType[] = ['STRING', 'NUMBER', 'BOOLEAN', 'DATE']
+
+/* ---------- 行列编辑（structure-edits） ---------- */
+const structOps = ref<XlsxStructureEditOperation[]>([])
+
+function addStructOp(): void {
+  structOps.value.push({ type: 'INSERT_ROWS', sheetName: sheetName.value, start: 1, count: 1 })
+}
+
+function removeStructOp(index: number): void {
+  structOps.value.splice(index, 1)
+}
+
+async function submitStruct(): Promise<void> {
+  if (props.fileId === null || props.versionNo === null) return
+  if (!structOps.value.length) {
+    ElMessage.warning('还没有添加行列操作')
+    return
+  }
+  submitting.value = true
+  try {
+    const version = await xlsxApi.editStructure(props.fileId, props.versionNo, {
+      operations: structOps.value,
+    })
+    ElMessage.success('已创建新版本')
+    emit('edited', version)
+  } catch (e) {
+    error.value = e instanceof ApiError ? e.message : '行列编辑失败'
+  } finally {
+    submitting.value = false
+  }
+}
+
+/* ---------- 工作表编辑（sheet-edits） ---------- */
+const sheetOps = ref<XlsxSheetEditOperation[]>([])
+
+function addSheetOp(): void {
+  sheetOps.value.push({ type: 'CREATE', sheetName: '新工作表' })
+}
+
+function removeSheetOp(index: number): void {
+  sheetOps.value.splice(index, 1)
+}
+
+async function submitSheet(): Promise<void> {
+  if (props.fileId === null || props.versionNo === null) return
+  if (!sheetOps.value.length) {
+    ElMessage.warning('还没有添加工作表操作')
+    return
+  }
+  const bad = sheetOps.value.findIndex(
+    (op) => !op.sheetName || (op.type === 'RENAME' && !(op.newName ?? '').trim()),
+  )
+  if (bad >= 0) {
+    ElMessage.warning(`第 ${bad + 1} 条：工作表名必填，重命名需填新名称`)
+    return
+  }
+  submitting.value = true
+  try {
+    const version = await xlsxApi.editSheets(props.fileId, props.versionNo, {
+      operations: sheetOps.value,
+    })
+    ElMessage.success('已创建新版本')
+    emit('edited', version)
+  } catch (e) {
+    error.value = e instanceof ApiError ? e.message : '工作表编辑失败'
+  } finally {
+    submitting.value = false
+  }
+}
 </script>
 
 <template>
@@ -248,6 +319,60 @@ const VALUE_TYPES: XlsxValueType[] = ['STRING', 'NUMBER', 'BOOLEAN', 'DATE']
           <span class="xe__spacer" />
           <el-button type="primary" size="small" :loading="submitting" :disabled="!ops.length" @click="submit">
             提交 {{ ops.length }} 条
+          </el-button>
+        </div>
+      </el-tab-pane>
+
+      <!-- 行列与工作表 -->
+      <el-tab-pane label="行列 / 工作表" name="sheet">
+        <p class="xe__hint">
+          行列操作从 <strong>1</strong> 开始；列操作中 <code>1</code> 表示 A 列。单次数量上限 1000。
+        </p>
+        <div class="xe__list">
+          <div v-for="(op, index) in structOps" :key="index" class="xe__op">
+            <el-select v-model="op.type" class="xe__op-type">
+              <el-option label="插入行" value="INSERT_ROWS" />
+              <el-option label="删除行" value="DELETE_ROWS" />
+              <el-option label="插入列" value="INSERT_COLUMNS" />
+              <el-option label="删除列" value="DELETE_COLUMNS" />
+            </el-select>
+            <el-select v-model="op.sheetName" class="xe__sheet" filterable placeholder="工作表">
+              <el-option v-for="s in sheets" :key="s.name" :label="s.name" :value="s.name" />
+            </el-select>
+            <el-input-number v-model="op.start" :min="1" placeholder="起始" />
+            <el-input-number v-model="op.count" :min="1" :max="1000" placeholder="数量" />
+            <el-button link type="danger" size="small" @click="removeStructOp(index)">移除</el-button>
+          </div>
+        </div>
+        <div class="xe__actions">
+          <el-button size="small" @click="addStructOp">添加行列操作</el-button>
+          <span class="xe__spacer" />
+          <el-button type="primary" size="small" :loading="submitting" :disabled="!structOps.length" @click="submitStruct">
+            提交 {{ structOps.length }} 条
+          </el-button>
+        </div>
+
+        <p class="xe__hint" style="margin-top: 16px">
+          工作表操作：CREATE 可指定插入位置（不填追加到末尾）；RENAME 需要新名称；DELETE 删除后不可恢复。
+        </p>
+        <div class="xe__list">
+          <div v-for="(op, index) in sheetOps" :key="index" class="xe__op">
+            <el-select v-model="op.type" class="xe__op-type">
+              <el-option label="新建" value="CREATE" />
+              <el-option label="重命名" value="RENAME" />
+              <el-option label="删除" value="DELETE" />
+            </el-select>
+            <el-input v-model="op.sheetName" placeholder="工作表名" class="xe__sheet" />
+            <el-input v-if="op.type === 'RENAME'" v-model="op.newName" placeholder="新名称" class="xe__sheet" />
+            <el-input-number v-if="op.type === 'CREATE'" v-model="op.position" :min="1" placeholder="位置" />
+            <el-button link type="danger" size="small" @click="removeSheetOp(index)">移除</el-button>
+          </div>
+        </div>
+        <div class="xe__actions">
+          <el-button size="small" @click="addSheetOp">添加工作表操作</el-button>
+          <span class="xe__spacer" />
+          <el-button type="primary" size="small" :loading="submitting" :disabled="!sheetOps.length" @click="submitSheet">
+            提交 {{ sheetOps.length }} 条
           </el-button>
         </div>
       </el-tab-pane>
