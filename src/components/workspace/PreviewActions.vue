@@ -23,7 +23,9 @@ defineProps<{
   /** 是否允许 DOCX 段落格式编辑：当前版本是 DOCX 时可用 */
   canFormatDocx: boolean
   /** 是否允许 DOCX 表格编辑：当前版本是 DOCX 时可用 */
-  canEditTable: boolean}>()
+  canEditTable: boolean
+  /** 是否允许 DOCX 目录域与内嵌图片：当前版本是 DOCX 时可用 */
+  canTocImage: boolean}>()
 
 /** 组件对外事件 */
 const emit = defineEmits<{
@@ -45,6 +47,8 @@ const emit = defineEmits<{
   (e: 'docx-format'): void
   /** 点击 DOCX 表格编辑（仅在 canEditTable 为 true 时按钮可点击） */
   (e: 'table-edit'): void
+  /** 点击 DOCX 目录/图片（仅在 canTocImage 为 true 时按钮可点击） */
+  (e: 'toc-image'): void
 }>()
 </script>
 
@@ -83,6 +87,16 @@ const emit = defineEmits<{
       @click="emit('table-edit')"
     >
       表格编辑
+    </button>
+
+    <!-- DOCX 目录域与内嵌图片 -->
+    <button
+      class="preview-actions__btn preview-actions__btn--export"
+      type="button"
+      :disabled="!canTocImage || busy"
+      @click="emit('toc-image')"
+    >
+      目录／图片
     </button>
 
     <!-- OCR：对 PDF 扫描页或图片做识别，不产生版本 -->
