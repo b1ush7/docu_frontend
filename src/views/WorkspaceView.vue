@@ -23,6 +23,7 @@ import AiHistoryDialog from '@/components/workspace/AiHistoryDialog.vue'
 import TaskCreateDialog from '@/components/workspace/TaskCreateDialog.vue'
 import OcrDialog from '@/components/workspace/OcrDialog.vue'
 import TemplateGenerateDialog from '@/components/workspace/TemplateGenerateDialog.vue'
+import ImageEditDialog from '@/components/workspace/ImageEditDialog.vue'
 import { useCurrentUser } from '@/composables/useCurrentUser'
 import { usePreviewFlow } from '@/composables/usePreviewFlow'
 import { previewApi } from '@/api/preview'
@@ -42,6 +43,8 @@ const taskCreateVisible = ref(false)
 const ocrVisible = ref(false)
 /** 按模板生成文档 */
 const templateVisible = ref(false)
+/** 图片编辑 */
+const imageEditVisible = ref(false)
 const navigationLoading = ref(false)
 const downloading = ref(false)
 const displayedSessionId = ref<number | null>(null)
@@ -240,6 +243,17 @@ function onTemplateCreated(file: FileAsset): void {
   selectedFile.value = file
   currentFileId.value = file.id
 }
+
+/**
+ * 图片编辑成功：刷新文件列表并切到新版本预览。
+ * 编辑会创建一个新版本，必须显式跳到它，否则看到的还是编辑前的内容。
+ */
+async function onImageEdited(version: Version): Promise<void> {
+  fileListRef.value?.refresh()
+  const current = previewFlow.previewVersion.value
+  if (!current) return
+  await previewFlow.openVersion(current.fileId, version.versionNo)
+}
 async function onTaskResult(task: Task): Promise<void> {
   if (task.status !== 'SUCCEEDED' || task.fileId === null || task.outputVersion === null || previewFlow.busy.value || navigationLoading.value) return
   navigationLoading.value = true
@@ -413,12 +427,14 @@ async function onExportPdf(): Promise<void> {
               :can-discard="previewFlow.canDiscard.value"
               :can-export="previewFlow.previewVersion.value !== null && !previewFlow.busy.value"
               :can-ocr="['pdf', 'png', 'jpg', 'jpeg'].includes(previewFlow.previewVersion.value?.extension ?? '')"
+              :can-image-edit="['png', 'jpg', 'jpeg'].includes(previewFlow.previewVersion.value?.extension ?? '')"
               :busy="previewFlow.busy.value"
               @back="previewFlow.back()"
               @confirm="previewFlow.confirm()"
               @discard="previewFlow.discard()"
               @export="onExportPdf"
               @ocr="ocrVisible = true"
+              @image-edit="imageEditVisible = true"
             />
           </div>
         </div>
@@ -429,6 +445,12 @@ async function onExportPdf(): Promise<void> {
   <AiHistoryDialog v-model="aiHistoryVisible" :file-id="currentFileId" :opening="navigationLoading" @reply="onHistoryReply" @changed="onSessionChanged" />
   <TaskCreateDialog v-model="taskCreateVisible" :file-id="currentFileId" @created="onTaskCreated" />
   <TemplateGenerateDialog v-model="templateVisible" @created="onTemplateCreated" />
+  <ImageEditDialog
+    v-model="imageEditVisible"
+    :file-id="previewFlow.previewVersion.value?.fileId ?? null"
+    :version-no="previewFlow.previewVersion.value?.versionNo ?? null"
+    @edited="onImageEdited"
+  />
   <OcrDialog
     v-model="ocrVisible"
     :file-id="previewFlow.previewVersion.value?.fileId ?? null"

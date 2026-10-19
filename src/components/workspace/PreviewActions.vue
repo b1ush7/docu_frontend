@@ -16,6 +16,8 @@ defineProps<{
   busy: boolean
   /** 是否允许 OCR：当前版本是 PDF 或图片时可用 */
   canOcr: boolean
+  /** 是否允许图片编辑：当前版本是 PNG/JPEG 时可用 */
+  canImageEdit: boolean
 }>()
 
 /** 组件对外事件 */
@@ -30,6 +32,8 @@ const emit = defineEmits<{
   (e: 'export'): void
   /** 点击 OCR 识别（仅在 canOcr 为 true 时按钮可点击） */
   (e: 'ocr'): void
+  /** 点击图片编辑（仅在 canImageEdit 为 true 时按钮可点击） */
+  (e: 'image-edit'): void
 }>()
 </script>
 
@@ -48,6 +52,16 @@ const emit = defineEmits<{
       @click="emit('ocr')"
     >
       OCR 识别
+    </button>
+
+    <!-- 图片编辑：裁剪/缩放/旋转/亮度/文字，提交后创建新版本 -->
+    <button
+      class="preview-actions__btn preview-actions__btn--export"
+      type="button"
+      :disabled="!canImageEdit || busy"
+      @click="emit('image-edit')"
+    >
+      图片编辑
     </button>
 
     <!-- 导出 PDF：把当前版本导出为 PDF，不影响版本记录 -->
