@@ -84,6 +84,7 @@ const router = createRouter({
         { path: 'files', name: 'Files', component: () => import('@/views/FilesView.vue'), meta: { title: '文件管理' } },
         { path: 'tasks', name: 'Tasks', component: () => import('@/views/TasksView.vue'), meta: { title: '任务管理' } },
         { path: 'model-configs', name: 'ModelConfigs', component: () => import('@/views/ModelConfigsView.vue'), meta: { title: '模型配置' } },
+        { path: 'templates', name: 'Templates', component: () => import('@/views/TemplatesView.vue'), meta: { title: '模板管理' } },
         { path: 'audit-logs', name: 'AuditLogs', component: () => import('@/views/AuditLogsView.vue'), meta: { title: '审计日志' } },
       ],
     },
