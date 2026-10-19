@@ -1278,3 +1278,320 @@ export interface UpdateModelConfigStatusParams {
   status: ModelConfigStatus
 }
 
+// ==================== OCR（API.md 3.11.1）====================
+
+/** OCR 请求：语言 / 页码 / DPI / 图像增强 / 区域 */
+export interface OcrParams {
+  /** 如 eng、chi_sim、eng+chi_sim；为空用部署默认值 */
+  language?: string
+  /** PDF 页码，1～1000，最多 50 个；为空识别全部页。图片只允许第 1 页 */
+  pages?: number[]
+  /** PDF 渲染 DPI，100～300；图片用原始像素 */
+  dpi?: number
+  /** 灰度 + 1%/99% 分位拉伸，不改坐标与尺寸 */
+  enhance?: boolean
+  /** 顺时针旋转 0/90/180/270 */
+  rotationDegrees?: number
+  /** 中值去噪 */
+  denoise?: boolean
+  /** 轻度锐化 */
+  sharpen?: boolean
+  /** Gamma 提亮低照度 */
+  lowLight?: boolean
+  /** 像素矩形；为空识别整页 */
+  region?: OcrRegion
+}
+
+/** OCR 识别区域（相对完整页面或原图） */
+export interface OcrRegion {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** OCR 行；坐标单位为渲染图或原图像素，confidence 为 0～100 */
+export interface OcrLine {
+  text: string
+  left: number
+  top: number
+  width: number
+  height: number
+  confidence: number
+  needsReview: boolean
+}
+
+/** 服务端按纵向间距启发式分组的段落，不代表已恢复完整表格结构 */
+export interface OcrParagraph {
+  text: string
+  left: number
+  top: number
+  width: number
+  height: number
+  confidence: number
+  needsReview: boolean
+  lines: OcrLine[]
+}
+
+/** OCR 表格单元格；行列下标从 0 开始，合并单元格用 rowSpan/columnSpan 表示 */
+export interface OcrTableCell {
+  row: number
+  column: number
+  rowSpan: number
+  columnSpan: number
+  text: string
+  left: number
+  top: number
+  width: number
+  height: number
+  confidence: number
+  needsReview: boolean
+}
+
+/** OCR 表格 */
+export interface OcrTable {
+  rows: number
+  columns: number
+  confidence: number
+  needsReview: boolean
+  cells: OcrTableCell[]
+}
+
+/** OCR 页面来源：原生文字 / OCR 识别 / 空白 */
+export type OcrPageSource = 'NATIVE' | 'OCR' | 'EMPTY'
+
+/** OCR 单页结果 */
+export interface OcrPage {
+  pageNo: number
+  source: OcrPageSource
+  width: number
+  height: number
+  text: string
+  confidence: number | null
+  needsReview: boolean
+  region: OcrRegion | null
+  paragraphs: OcrParagraph[]
+  tables: OcrTable[]
+  lines: OcrLine[]
+  truncated: boolean
+}
+
+/** OCR 统一结果（对应后端 OcrResultVO）；fingerprint 用于保存人工校正 */
+export interface OcrResult {
+  fileId: number
+  versionNo: number
+  engine: string | null
+  language: string | null
+  totalPages: number
+  renderedPages: number
+  truncated: boolean
+  pages: OcrPage[]
+  /** 64 位小写十六进制 SHA-256，标识本次识别内容 */
+  fingerprint: string
+}
+
+/** 表格单元格校正 */
+export interface OcrCellCorrection {
+  row: number
+  column: number
+  rowSpan: number
+  columnSpan: number
+  text: string
+}
+
+/** 表格校正 */
+export interface OcrTableCorrection {
+  /** 原页面 tables[] 的零基下标，0～19 */
+  tableIndex: number
+  /** 1～200 */
+  rows: number
+  /** 1～100 */
+  columns: number
+  cells: OcrCellCorrection[]
+}
+
+/** 单页校正 */
+export interface OcrPageCorrection {
+  pageNo: number
+  /** 允许空字符串表示用户确认整页无文字 */
+  text: string
+  /** 单页最多 20 个表格 */
+  tables?: OcrTableCorrection[]
+}
+
+/** 保存人工校正请求 */
+export interface SaveOcrCorrectionsParams {
+  /** 64 位小写十六进制指纹，必须与当前识别结果一致，否则 409 */
+  fingerprint: string
+  /** 1～100 页 */
+  pages: OcrPageCorrection[]
+}
+
+/** 已保存的校正（对应后端 OcrCorrectionVO） */
+export interface OcrCorrection {
+  fileId: number
+  versionNo: number
+  fingerprint: string
+  pages: Array<{
+    pageNo: number
+    text: string
+    tables: Array<{
+      tableIndex: number
+      rows: number
+      columns: number
+      cells: OcrCellCorrection[]
+    }>
+  }>
+  updatedAt: string
+}
+
+// ==================== PDF 转换 / 图片编辑 / DOCX 生成 ====================
+
+/** PDF 转 DOCX 的取向 */
+export type PdfConversionMode = 'EDITABLE' | 'LAYOUT'
+
+/** PDF 转 DOCX 请求（3.22） */
+export interface ConvertPdfToDocxParams {
+  mode: PdfConversionMode
+  instruction?: string
+  /** 如 eng、chi_sim；为空时遇到无原生文字页面返回 422 */
+  ocrLanguage?: string
+}
+
+/** 图片编辑操作类型 */
+export type ImageEditType = 'CROP' | 'RESIZE' | 'ROTATE' | 'BRIGHTNESS' | 'ADD_TEXT'
+
+/** 图片编辑的单个操作 */
+export interface ImageEditOperation {
+  type: ImageEditType
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  /** 只支持 90/180/270 */
+  degrees?: number
+  /** RGB 亮度乘数，0～4，1 为原值；不影响 alpha */
+  factor?: number
+  /** 单行纯文本，不解析 HTML/脚本/字体路径，最长 500 */
+  text?: string
+  /** 1～512 */
+  fontSize?: number
+  /** `#RRGGBB` */
+  color?: string
+}
+
+/** 图片编辑请求（3.20） */
+export interface EditImageParams {
+  instruction?: string
+  /** 输出格式，只能是 PNG 或 JPEG */
+  outputFormat?: 'PNG' | 'JPEG'
+  /** 0.1～1.0 */
+  jpegQuality?: number
+  /** 最多 20 个操作，不能为 null */
+  operations: ImageEditOperation[]
+}
+
+/** DOCX 结构块类型 */
+export type DocxBlockType = 'HEADING' | 'PARAGRAPH' | 'BULLET_LIST' | 'NUMBERED_LIST' | 'TABLE' | 'IMAGE'
+
+/** 生成 DOCX 的结构块 */
+export interface DocxGenerateBlock {
+  type: DocxBlockType
+  text?: string
+  /** 1～9，仅 HEADING */
+  level?: number
+  /** 最多 100 项 */
+  items?: string[]
+  /** 最多 100 行，每行 1～20 个单元格 */
+  rows?: string[][]
+  imageFileId?: number
+  imageVersionNo?: number
+  widthPixels?: number
+  heightPixels?: number
+}
+
+/**
+ * 生成 DOCX 请求（4.2）：模板模式与结构块模式**不能混用**。
+ * - 模板模式：给 `templateId`（可选 `templateVersion`）+ `variables`
+ * - 结构块模式：给 `blocks`
+ */
+export interface GenerateDocxParams {
+  templateId?: number
+  templateVersion?: number
+  /** 最多 100 个模板变量；值必须是字面量字符串 */
+  variables?: Record<string, unknown>
+  fileName?: string
+  /** 文档标题，最长 1000 */
+  title?: string
+  instruction?: string
+  /** 最多 200 个结构块 */
+  blocks?: DocxGenerateBlock[]
+}
+
+// ==================== 独立校验验证码 / 存储回收 ====================
+
+/** 独立校验验证码请求（用于注册与验证码登录场景） */
+export interface VerifyCodeParams {
+  /** `^1[3-9]\d{9}$` */
+  phone: string
+  /** `^\d{4,8}$` */
+  code: string
+}
+
+/** 存储回收报告（对应后端 StorageRecycleReport）；truncated 表示需再次运行 */
+export interface StorageRecycleReport {
+  dryRun: boolean
+  expiredFiles: number
+  scannedFiles: number
+  deletedBlobs: number
+  deletedBytes: number
+  truncated: boolean
+  entries: Array<{ storageKey: string; sizeBytes: number; outcome: string }>
+}
+
+// ==================== 智能体执行结果（OCR 整理等复用）====================
+
+/** 智能体步骤类型 */
+export type AgentStepKind = 'MODEL_CALL' | 'TOOL_CALL' | 'FAILURE'
+
+/** 智能体循环结束原因：COMPLETED 正常，其余表示被上限或异常截断 */
+export type AgentTermination =
+  | 'COMPLETED'
+  | 'MAX_STEPS'
+  | 'MAX_TOOL_CALLS'
+  | 'REPEATED_TOOL'
+  | 'CANCELLED'
+  | 'INVALID_PLAN'
+  | 'QUOTA_EXCEEDED'
+  | 'QUOTA_UNAVAILABLE'
+  | 'MODEL_UNAVAILABLE'
+
+/** 一次智能体执行的过程与结果（对应后端 AgentRunResult） */
+export interface AgentRunResult {
+  reply: string
+  steps: Array<{
+    index: number
+    kind: AgentStepKind
+    name: string
+    detail: string | null
+    durationMs: number
+  }>
+  plans: unknown[]
+  usage: {
+    modelCalls: number
+    toolCalls: number
+    inputTokens: number | null
+    outputTokens: number | null
+    /** 未配置单价时为 0，**不代表免费** */
+    estimatedCost: number
+    /** false 时 estimatedCost 无意义，应提示「未配置计价」 */
+    costConfigured: boolean
+    elapsedMs: number
+  }
+  termination: AgentTermination
+  /** true 时 reply 可能不是完整结论 */
+  truncated: boolean
+  sources: Array<{ title: string; url: string | null; excerpt: string | null }>
+  verificationNotice: string | null
+}
+

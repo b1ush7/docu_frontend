@@ -4,7 +4,8 @@
  *              回复生成后需要用户确认才会落版本；确认与放弃都只能基于已保存的回复。
  */
 
-import { deleteData, getData, postData } from './http'
+import { API_ENDPOINTS } from './endpoints'
+import { deleteData, getData, http, postData } from './http'
 import type {
   AiReply,
   AiSession,
@@ -13,6 +14,13 @@ import type {
   AiMessage,
   PageResult,
 } from './types'
+
+/** SSE 流式回复事件 */
+export type AiStreamEvent =
+  | { event: 'started'; replyId: number }
+  | { event: 'delta'; text: string }
+  | { event: 'completed'; reply: AiReply }
+  | { event: 'error'; message: string }
 
 /** AI 会话与回复 API */
 export const aiApi = {
@@ -84,5 +92,80 @@ export const aiApi = {
   /** 放弃待确认计划：不生成版本；重复放弃幂等 */
   discardReply(sessionId: number, messageId: number): Promise<AiReply> {
     return postData<AiReply>(`/ai/sessions/${sessionId}/replies/${messageId}/discard`)
+  },
+
+  /**
+   * 生成流式回复（SSE，text/event-stream）
+   *
+   * 事件协议（与后端 8.1.1 一致）：
+   *   `started`   → `{ replyId }`，回复已持久化为 RUNNING，可立即用 getReply 查询
+   *   `delta`     → `{ text }`，按接收顺序拼接
+   *   `completed` → 完整 AiReply，**仍以其中的 runStatus / planStatus 为准**
+   *   `error`     → 统一错误对象
+   *
+   * 实现说明：浏览器端用 axios 的 `onDownloadProgress` 读取增量
+   * （XHR 的 responseText 会随下载增长），按 `\n\n` 切分事件块。
+   * 断线或超时由调用方 abort；模型不支持流式时后端会退回同步并一次性发完整文本，协议不变。
+   *
+   * @param sessionId 会话 ID
+   * @param body 与同步生成相同的请求体（含 idempotencyKey）
+   * @param onEvent 每解析出一个事件回调一次
+   * @param signal 可选 AbortSignal，用于取消
+   */
+  async streamReply(
+    sessionId: number,
+    body: AiReplyRequest,
+    onEvent: (event: AiStreamEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    let consumed = 0
+    let buffer = ''
+
+    /** 解析已到达的完整事件块 */
+    const drain = (text: string): void => {
+      buffer += text
+      let index = buffer.indexOf('\n\n')
+      while (index >= 0) {
+        const chunk = buffer.slice(0, index)
+        buffer = buffer.slice(index + 2)
+        const name = /^event:\s*(.+)$/m.exec(chunk)?.[1]?.trim() ?? 'message'
+        const data = chunk
+          .split('\n')
+          .filter((line) => line.startsWith('data:'))
+          .map((line) => line.slice(5).trim())
+          .join('\n')
+        if (data) {
+          try {
+            const parsed = JSON.parse(data)
+            if (name === 'started') onEvent({ event: 'started', replyId: parsed.replyId })
+            else if (name === 'delta') onEvent({ event: 'delta', text: parsed.text ?? '' })
+            else if (name === 'completed') onEvent({ event: 'completed', reply: parsed })
+            else if (name === 'error') {
+              onEvent({ event: 'error', message: parsed.msg ?? parsed.message ?? '流式回复失败' })
+            }
+          } catch {
+            // 非法 JSON 不阻断流；交由后续 completed 事件兜底
+          }
+        }
+        index = buffer.indexOf('\n\n')
+      }
+    }
+
+    await http.post(API_ENDPOINTS.ai.replyStream(sessionId), body, {
+      responseType: 'text',
+      signal,
+      // SSE 连接可能持续较久，不能沿用默认 15 秒超时
+      timeout: 180000,
+      headers: { Accept: 'text/event-stream' },
+      transformResponse: [(data: unknown) => data],
+      onDownloadProgress: (event) => {
+        const xhr = event.event?.target as XMLHttpRequest | undefined
+        const text = xhr?.responseText ?? ''
+        if (text.length > consumed) {
+          drain(text.slice(consumed))
+          consumed = text.length
+        }
+      },
+    })
   },
 }

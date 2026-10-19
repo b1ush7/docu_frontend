@@ -5,7 +5,7 @@
 
 import { API_ENDPOINTS } from './endpoints'
 import { deleteData, getBlob, getData, postData, putData } from './http'
-import type { FileAsset, FileListParams, PageResult, Version } from './types'
+import type { EditImageParams, FileAsset, FileListParams, PageResult, Version } from './types'
 
 /** 文件模块 API 集合 */
 export const fileApi = {
@@ -119,5 +119,18 @@ export const fileApi = {
       // expectVersion 为可选乐观锁参数，未传时不携带查询参数
       params: expectVersion !== undefined ? { expectVersion } : undefined,
     })
+  },
+
+  /**
+   * 编辑 PNG/JPEG 像素或转换格式，保存为带独立格式信息的新版本（3.20）
+   *
+   * 只支持图片版本；单次最多 20 个操作，按数组顺序作用在同一张图上。
+   * @param fileId 文件 ID
+   * @param versionNo 基准版本号
+   * @param params 输出格式 / JPEG 质量 / 操作列表
+   * @returns 新创建的版本
+   */
+  editImage(fileId: number, versionNo: number, params: EditImageParams): Promise<Version> {
+    return postData<Version>(API_ENDPOINTS.file.imageEdits(fileId, versionNo), params)
   },
 }

@@ -11,13 +11,14 @@
  */
 
 import { API_ENDPOINTS } from './endpoints'
-import { getBlob, getData } from './http'
+import { getBlob, getData, postData } from './http'
 import type {
   AuditLog,
   AuditQueryParams,
   DocxStructure,
   PageResult,
   PdfContent,
+  StorageRecycleReport,
   Version,
   VersionPreviewMeta,
   XlsxFormulaResults,
@@ -171,5 +172,22 @@ export const adminAuditApi = {
    */
   list(params?: AuditQueryParams): Promise<PageResult<AuditLog>> {
     return getData<PageResult<AuditLog>>(API_ENDPOINTS.admin.auditLogs, { params })
+  },
+}
+
+/** 管理端存储回收 API 集合 */
+export const adminStorageApi = {
+  /**
+   * 预演或执行正式存储回收（会写审计日志）
+   *
+   * **默认 dryRun=true**，即只统计不删除；真正执行必须显式传 false。
+   * 返回结果只包含本批次，`truncated=true` 表示需要再次运行。
+   * @param dryRun true 预演（默认），false 真正删除
+   */
+  recycle(dryRun = true): Promise<StorageRecycleReport> {
+    // 后端是 @RequestParam(defaultValue="true") boolean dryRun，走 query 参数
+    return postData<StorageRecycleReport>(API_ENDPOINTS.admin.storageRecycle, undefined, {
+      params: { dryRun },
+    })
   },
 }

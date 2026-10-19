@@ -12,6 +12,8 @@ export const API_ENDPOINTS = {
     refresh: '/user/refresh',
     /** 获取当前登录用户 */
     me: '/user/me',
+    /** 独立消费并校验验证码（注册/验证码登录场景） */
+    verifyCode: '/user/verify/code',
   },
   /** 文件模块 */
   file: {
@@ -218,6 +220,74 @@ export const API_ENDPOINTS = {
      */
     xlsxImages: (fileId: number, versionNo: number) =>
       `/file/${fileId}/versions/${versionNo}/xlsx/images`,
+    /**
+     * OCR 同步识别（返回结构化文本/表格，不保存版本）
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    ocr: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/ocr`,
+    /**
+     * OCR 识别并下载 UTF-8 纯文本
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    ocrText: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/ocr/text`,
+    /**
+     * OCR 人工校正：PUT 保存、GET 读取（GET 需再拼 /{fingerprint}）
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    ocrCorrections: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/ocr/corrections`,
+    /**
+     * 读取已保存的逐页人工校正
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     * @param fingerprint OCR 结果指纹
+     */
+    ocrCorrection: (fileId: number, versionNo: number, fingerprint: string) =>
+      `/file/${fileId}/versions/${versionNo}/ocr/corrections/${fingerprint}`,
+    /**
+     * 把人工校正内容交给文本模型只读整理（不产生版本）
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     * @param fingerprint OCR 结果指纹
+     */
+    ocrCorrectionOrganize: (fileId: number, versionNo: number, fingerprint: string) =>
+      `/file/${fileId}/versions/${versionNo}/ocr/corrections/${fingerprint}/organize`,
+    /**
+     * 读取 PDF 原生文本与页面类型（不做 OCR）
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    pdfContent: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/pdf/content`,
+    /**
+     * 渲染 PDF 指定页为 PNG
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     * @param pageNo 页码，从 1 开始
+     */
+    pdfPagePreview: (fileId: number, versionNo: number, pageNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/pdf/pages/${pageNo}/preview`,
+    /**
+     * 将 PDF 转换为可编辑 DOCX 新版本
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    pdfConvertToDocx: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/pdf/convert-to-docx`,
+    /**
+     * PNG/JPEG 本地编辑并新建版本
+     * @param fileId 文件 ID
+     * @param versionNo 版本号
+     */
+    imageEdits: (fileId: number, versionNo: number) =>
+      `/file/${fileId}/versions/${versionNo}/image-edits`,
+    /** 按结构块或公共模板生成新的 DOCX 文件 */
+    docxGenerate: '/file/docx/generate',
   },
   /** 异步任务模块 */
   task: {
@@ -330,6 +400,8 @@ export const API_ENDPOINTS = {
       `/admin/files/${fileId}/versions/${versionNo}/pages/${pageNo}/preview`,
     /** 审计日志查询（固定时间倒序，不接受前端指定排序字段） */
     auditLogs: '/admin/audit-logs',
+    /** 正式存储回收：POST + query 参数 dryRun（默认 true 预演） */
+    storageRecycle: '/admin/storage/recycle',
     /** 公共模板分页列表（管理员视角，含未启用） */
     templates: '/admin/templates',
     /** 新建公共模板（multipart：元数据字段 + file） */
@@ -412,5 +484,13 @@ export const API_ENDPOINTS = {
   template: {
     /** 可生成的已启用 DOCX 模板列表 */
     list: '/templates',
+  },
+  /** AI 会话与回复（其余端点直接写在 api/ai.ts 中） */
+  ai: {
+    /**
+     * 会话内生成流式回复（SSE，text/event-stream）
+     * @param sessionId 会话 ID
+     */
+    replyStream: (sessionId: number) => `/ai/sessions/${sessionId}/replies/stream`,
   },
 } as const

@@ -21,7 +21,9 @@ import type {
   EditDocxFootnotesParams,
   EditDocxParagraphsParams,
   EditDocxTableParams,
+  FileAsset,
   FormatDocxParagraphsParams,
+  GenerateDocxParams,
   InsertDocxImagesParams,
   ReplaceDocxTextParams,
   UpdateDocxHeaderFooterLinkParams,
@@ -191,5 +193,19 @@ export const docxApi = {
       API_ENDPOINTS.file.tableOfContents(fileId, versionNo),
       params,
     )
+  },
+
+  /**
+   * 按结构块或公共模板生成新的 DOCX 文件（4.2）
+   *
+   * 两种模式**不能混用**：
+   * - 模板模式：`templateId`（可选 `templateVersion`）+ `variables`
+   * - 结构块模式：`blocks`
+   *
+   * 生成的是**新文件**，不是既有文件的新版本，所以返回 FileAsset 而不是 Version。
+   * @param params 生成参数
+   */
+  generate(params: GenerateDocxParams): Promise<FileAsset> {
+    return postData<FileAsset>(API_ENDPOINTS.file.docxGenerate, params)
   },
 }
