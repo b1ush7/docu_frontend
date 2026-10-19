@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 /**
  * @component PreviewPanel
  * @description 右侧主内容区"状态二"文稿预览：顶部为"预览文稿"标题与版本标识，
@@ -35,6 +35,8 @@ const props = defineProps<{
   /** 待确认计划状态；只有 CONFIRMED 才会产出新版本 */
   planStatus: AiPlanStatus
   reply: AiReply | null
+  /** 流式回复已接收的增量文本；生成中非空时逐字展示 */
+  streamText?: string
   previewVersion: PreviewVersion | null
   /** 任务成功后读取的输出版本 DOCX 结构 */
   structure: DocxStructure | null
@@ -236,6 +238,8 @@ function compareTypeLabel(type: string): string {
       <p class="preview-panel__hint">
         正在生成：{{ task.currentStep ?? '等待调度' }}（{{ task.progress }}%）
       </p>
+      <!-- 流式增量文本：模型在"说话"的过程，逐字追加 -->
+      <pre v-if="streamText" class="preview-panel__stream">{{ streamText }}<span class="preview-panel__caret" /></pre>
     </template>
 
     <!-- 失败 / 取消：脱敏错误信息（墨色小字，按规范不用红色） -->
@@ -640,5 +644,36 @@ function compareTypeLabel(type: string): string {
   color: $ink;
   background-color: $paper-surface;
   border-color: $line;
+}
+
+/* 流式增量文本：等宽小字、保留换行，末尾带闪烁光标 */
+.preview-panel__stream {
+  margin: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: $gap-sm;
+  font-family: $font-serif;
+  font-size: $font-size-body;
+  line-height: 1.7;
+  color: $ink;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background-color: $paper-surface;
+  border: $border-w solid $line;
+  border-radius: $radius;
+}
+
+.preview-panel__caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background-color: $accent;
+  animation: preview-panel-blink 1s step-end infinite;
+}
+
+@keyframes preview-panel-blink {
+  50% { opacity: 0; }
 }
 </style>

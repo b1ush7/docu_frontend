@@ -385,6 +385,7 @@ async function onExportPdf(): Promise<void> {
               :changes="previewFlow.changes.value"
               :plan-status="previewFlow.planStatus.value"
               :reply="previewFlow.reply.value"
+              :stream-text="previewFlow.streamText.value"
               :preview-version="previewFlow.previewVersion.value"
               :structure="previewFlow.structure.value"
               :structure-loading="previewFlow.structureLoading.value"

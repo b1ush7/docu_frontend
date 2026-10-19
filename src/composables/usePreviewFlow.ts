@@ -28,6 +28,12 @@ export function usePreviewFlow(hooks: UsePreviewFlowHooks) {
   const conflict = ref(false)
   const restoring = ref(false)
   const sessionArchived = ref(false)
+  /**
+   * 流式回复已接收的文本。
+   * 生成过程中逐步追加，让用户看到模型在"说话"而不是一个静止的进度条；
+   * `completed` 事件到达后由 reply 接管，这里保留最后一份文本供面板展示。
+   */
+  const streamText = ref('')
   const isGenerating = computed(() => submitting.value
     || (reply.value?.runStatus === 'RUNNING' && activeTask.value?.status !== 'FAILED'))
   const isFailed = computed(() => activeTask.value?.status === 'FAILED')
@@ -42,6 +48,8 @@ export function usePreviewFlow(hooks: UsePreviewFlowHooks) {
   let currentFileId: number | null = null
   let currentInstruction = ''
   let disposed = false
+  /** 当前流式请求的取消句柄；页面卸载或重新提交时用它中止旧连接 */
+  let streamController: AbortController | null = null
   let revision = 0
   // Reuse exactly the same payload/key after a transport timeout. The server may have saved the reply.
   let retryIntent: { fileId: number; instruction: string; sessionId: number; body: AiReplyRequest } | null = null
@@ -97,9 +105,54 @@ export function usePreviewFlow(hooks: UsePreviewFlowHooks) {
       await loadVersion(fileId, r.outputVersion, request)
     }
   }
+  /**
+   * 发起一次回复生成：优先走 SSE 流式，失败时回退同步接口。
+   *
+   * 为什么可以安全回退：两条路径共用**同一个幂等键**。
+   * 流式若在服务端已保存回复后才断开，回退的同步请求会被后端识别为同一意图，
+   * 直接返回已有回复而不是再调一次模型。
+   */
+  async function requestReply(sid: number, body: AiReplyRequest): Promise<AiReply> {
+    streamText.value = ''
+    const controller = new AbortController()
+    streamController = controller
+    let buffered = ''
+    let completed: AiReply | null = null
+    let streamError = ''
+    try {
+      await aiApi.streamReply(
+        sid,
+        body,
+        (event) => {
+          if (disposed) return
+          if (event.event === 'delta') {
+            buffered += event.text
+            streamText.value = buffered
+          } else if (event.event === 'completed') {
+            completed = event.reply
+          } else if (event.event === 'error') {
+            streamError = event.message
+          }
+        },
+        controller.signal,
+      )
+    } catch {
+      // 连接层失败（后端未开 SSE、代理缓冲、网络中断）不在此处抛出，交给下面的回退逻辑
+      streamError = streamError || 'stream-failed'
+    } finally {
+      streamController = null
+    }
+    if (completed) return completed
+    if (disposed) throw new ApiError(499, '已取消')
+    // 流式没有给出 completed：可能是被截断或不可用，退回同步接口（同幂等键）
+    return aiApi.generateReply(sid, body)
+  }
   async function submit(fileId: number, instruction: string): Promise<void> {
     if (busy.value || disposed) return
     stopPolling()
+    // 中止上一次未完成的流式连接，避免两路增量混在一起
+    streamController?.abort()
+    streamController = null
     const request = ++revision
     submitting.value = true
     structure.value = null
@@ -107,6 +160,7 @@ export function usePreviewFlow(hooks: UsePreviewFlowHooks) {
     structureError.value = ''
     conflict.value = false
     reply.value = null
+    streamText.value = ''
     currentFileId = fileId
     currentInstruction = instruction
     mode.value = 'preview'
@@ -128,7 +182,9 @@ export function usePreviewFlow(hooks: UsePreviewFlowHooks) {
         }
       }
       sessionId = retryIntent.sessionId
-      const r = await aiApi.generateReply(retryIntent.sessionId, retryIntent.body)
+      const sid = retryIntent.sessionId
+      const body = retryIntent.body
+      const r = await requestReply(sid, body)
       retryIntent = null
       await applyReply(r, fileId, request)
     } catch (error) {
@@ -237,8 +293,8 @@ export function usePreviewFlow(hooks: UsePreviewFlowHooks) {
       throw error
     } finally { if (request === revision) restoring.value = false }
   }
-  onBeforeUnmount(() => { disposed = true; revision++; stopPolling() })
+  onBeforeUnmount(() => { disposed = true; revision++; stopPolling(); streamController?.abort(); streamController = null })
   return { mode, activeTask, reply, changes, planStatus, structure, previewVersion, structureLoading,
-    structureError, isGenerating, isFailed, busy, canConfirm, canDiscard, sessionArchived,
+    structureError, isGenerating, isFailed, busy, canConfirm, canDiscard, sessionArchived, streamText,
     submit, back, confirm, discard, openVersion, restoreReply, reset }
 }
