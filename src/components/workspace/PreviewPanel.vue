@@ -13,6 +13,7 @@ import type { PreviewVersion } from '@/composables/usePreviewFlow'
 import { formatBytes } from '@/utils/format'
 import { taskStatusLabel } from '@/constants/task'
 import PagePreview from './PagePreview.vue'
+import CompatCheck from './CompatCheck.vue'
 import { previewApi } from '@/api/preview'
 import { ApiError } from '@/api/http'
 import type {
@@ -94,7 +95,7 @@ const currentVersion = computed(() => props.previewVersion ?? props.structure)
  *   - diff      与上一版本的块级差异（仅 versionNo > 1 可用）
  * 默认版面预览；服务端未启用渲染时 PagePreview 会自行降级提示，用户可切回结构预览。
  */
-const viewMode = ref<'page' | 'structure' | 'diff'>('page')
+const viewMode = ref<'page' | 'structure' | 'diff' | 'compat'>('page')
 
 /** 版本比较结果（仅在切到 diff 时加载） */
 const compareResult = ref<VersionCompareResult | null>(null)
@@ -139,7 +140,7 @@ async function loadCompare(): Promise<void> {
 }
 
 /** 切换到某个预览方式，必要时懒加载对应数据 */
-function switchView(next: 'page' | 'structure' | 'diff'): void {
+function switchView(next: 'page' | 'structure' | 'diff' | 'compat'): void {
   viewMode.value = next
   if (next === 'diff' && compareResult.value === null && !compareLoading.value) {
     void loadCompare()
@@ -205,6 +206,18 @@ function compareTypeLabel(type: string): string {
           @click="switchView('diff')"
         >
           与上一版比较
+        </button>
+        <!-- 兼容性验收只支持 DOCX；非 DOCX 时后端返回 400，因此直接不展示 -->
+        <button
+          v-if="(previewVersion?.extension ?? 'docx') === 'docx'"
+          class="preview-panel__tab"
+          :class="{ 'preview-panel__tab--active': viewMode === 'compat' }"
+          type="button"
+          role="tab"
+          :aria-selected="viewMode === 'compat'"
+          @click="switchView('compat')"
+        >
+          兼容性检查
         </button>
       </div>
     </div>
@@ -297,6 +310,14 @@ function compareTypeLabel(type: string): string {
         <p v-else class="preview-panel__hint">未检测到内容差异；字体、图片尺寸等排版变化请查看版面预览。</p>
       </template>
     </template>
+
+    <!-- 兼容性验收：需要服务端真实排版，按需运行 -->
+    <CompatCheck
+      v-else-if="currentVersion && viewMode === 'compat'"
+      :key="`${currentVersion.fileId}-${currentVersion.versionNo}`"
+      :file-id="currentVersion.fileId"
+      :version-no="currentVersion.versionNo"
+    />
 
     <!-- 结构预览：按结构块渲染（不依赖服务端渲染能力） -->
     <div v-else-if="structure" class="preview-panel__card">
