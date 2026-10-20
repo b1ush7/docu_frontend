@@ -6,7 +6,15 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} }
-globalThis.window = { addEventListener() {} }
+// OCR 草稿缓存写在 sessionStorage 里，Node 环境没有该对象，这里给一个内存实现
+globalThis.sessionStorage = (() => {
+  const map = new Map()
+  return { getItem: key => (map.has(key) ? map.get(key) : null), setItem: (key, value) => map.set(key, String(value)),
+    removeItem: key => map.delete(key), clear: () => map.clear() }
+})()
+// 组件在 unmount 时会移除事件监听，桩必须同时提供 removeEventListener，
+// 否则清理阶段会抛 "window.removeEventListener is not a function"
+globalThis.window = { addEventListener() {}, removeEventListener() {}, dispatchEvent() {} }
 let vite, ocrApi, xlsxApi, templateApi, docxApi, fileApi, adminDocsApi, ApiError
 const renderer = createRenderer({ createElement: () => ({}), createText: () => ({}),
   createComment: () => ({}), insert() {}, remove() {}, setText() {}, setElementText() {},
@@ -14,7 +22,7 @@ const renderer = createRenderer({ createElement: () => ({}), createText: () => (
 const flush = async () => { for (let i = 0; i < 15; i++) await nextTick() }
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b }); return { promise, resolve, reject } }
 before(async () => {
-  vite = await createServer({ server: { middlewareMode: true, watch: null }, appType: 'custom' })
+  vite = await createServer({ server: { middlewareMode: true, watch: null, hmr: false }, appType: 'custom' })
   ;({ ocrApi } = await vite.ssrLoadModule('/src/api/ocr.ts'))
   ;({ xlsxApi } = await vite.ssrLoadModule('/src/api/xlsx.ts'))
   ;({ templateApi } = await vite.ssrLoadModule('/src/api/template.ts'))
@@ -31,6 +39,11 @@ async function component(path, initial, plugins = []) {
   const Component = { ...original, render: () => null, ssrRender: undefined }
   const props = reactive(initial), child = ref()
   const app = renderer.createApp({ render: () => h(Component, { ...props, ref: child }) })
+  // 被测组件会间接调用 useUserStore()（useCurrentUser / useEditorDraft / useOcrCorrections），
+  // 没有 Pinia 会抛 "getActivePinia()"。每个组件挂载都用一份全新 store，避免用例间串味。
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  app.use(pinia)
   app.provide(ssrContextKey, { modules: new Set() })
   plugins.forEach(plugin => app.use(plugin))
   app.mount({})
@@ -53,6 +66,15 @@ async function ocrHarness() {
   const context = reactive({ visible: true, fileId: 1, versionNo: 1 })
   let flow
   const app = renderer.createApp({ setup() { flow = useOcrCorrections(() => context); return () => null } })
+  // useOcrCorrections 内部使用 useUserStore()，同样需要 Pinia 上下文
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  app.use(pinia)
+  // 缓存键包含用户 id：不登录时 cacheKey() 为空串，重开对话框就不会恢复草稿。
+  // 所以这里放一个登录用户，并清空上一用例留下的缓存，避免跨用例串数据。
+  globalThis.sessionStorage.clear()
+  const { useUserStore } = await vite.ssrLoadModule('/src/stores/user.ts')
+  useUserStore().user = { id: 1, username: 'tester' }
   app.mount({})
   return { flow, context, app }
 }
@@ -387,23 +409,6 @@ test('P2 audit time range uses ISO local timestamps and reset clears the filter'
     const count = calls.length; await c.state.load()
     assert.equal(calls.length, count)
     assert.match(c.state.error, /不能早于/)
-  } finally { c.app.unmount() }
-})
-test('P2 trend queries ignore old responses, reject overlong dates and preserve zero days', async () => {
-  const { statisticsApi } = await vite.ssrLoadModule('/src/api/statistics.ts')
-  const old = deferred(); const calls = []
-  statisticsApi.trend = (from, to) => { calls.push([from, to]); return old.promise }
-  const c = await component('/src/components/admin/StatisticsTrend.vue', {})
-  try {
-    statisticsApi.trend = async (from, to) => ({ from, to, timezone: 'Asia/Shanghai', points: [{ date: from, newUsers: 0, uploadedFiles: 0, createdTasks: 0, succeededTasks: 0, failedTasks: 0 }] })
-    c.state.quick(7); await flush()
-    old.resolve({ points: [] }); await flush()
-    assert.equal(c.state.report.points.length, 1)
-    assert.equal(c.state.peak, 1)
-    assert.match(c.state.line('newUsers'), /^40,180$/)
-    c.state.range = ['2020-01-01', '2026-10-20']; await c.state.load()
-    assert.match(c.state.error, /93/)
-    assert.equal(c.state.report, null)
   } finally { c.app.unmount() }
 })
 test('P2 workspace exposes admin navigation and revokes other devices without logging out current device', async () => {

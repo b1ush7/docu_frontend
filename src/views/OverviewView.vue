@@ -100,7 +100,8 @@
         </el-card>
       </el-col>
     </el-row>
-    <StatisticsTrend />
+    <!-- 趋势图已移除：后端只有 GET /admin/statistics/overview 快照统计，
+         没有时间序列接口，之前调用的 /admin/statistics/trend 并不存在。 -->
   </div>
 </template>
 
@@ -117,7 +118,7 @@ import 'element-plus/theme-chalk/el-skeleton.css'
 import { ElButton, ElCard, ElCol, ElResult, ElRow, ElSkeleton } from 'element-plus'
 
 import { ref } from 'vue'
-import StatisticsTrend from '@/components/admin/StatisticsTrend.vue'
+
 import { useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { getOverview } from '../api/admin'
