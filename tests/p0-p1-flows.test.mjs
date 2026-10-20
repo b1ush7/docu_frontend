@@ -107,6 +107,33 @@ test('XLSX stale structure, range, and failed requests cannot overwrite a newer 
     assert.equal(c.state.rangeResult, null)
   } finally { c.app.unmount() }
 })
+test('XLSX opens sheet data and saves formulas with cached results requested by default', async () => {
+  let body
+  xlsxApi.getStructure = async () => structure('数据')
+  xlsxApi.editCells = async (file, version, request) => { body = request; return { fileId: file, versionNo: version + 1 } }
+  const c = await component('/src/components/workspace/XlsxEditor.vue', { modelValue: true, fileId: 1, versionNo: 1 })
+  try {
+    assert.deepEqual([...c.state.expandedSheets], ['数据'])
+    c.state.ops = [{ type: 'SET_FORMULA', sheetName: '数据', cell: 'A3', formula: 'SUM(A1:A2)' }]
+    await c.state.submit()
+    assert.equal(body.recalculateFormulas, true)
+  } finally { c.app.unmount() }
+})
+
+test('XLSX preview opens the data tab on first mount and after confirmation creates a version', async () => {
+  const c = await component('/src/components/workspace/PreviewPanel.vue', {
+    task: null, changes: [], planStatus: 'NONE', reply: null, structure: null,
+    structureLoading: false, structureError: '',
+    previewVersion: { fileId: 1, versionNo: 1, extension: 'xlsx' },
+  })
+  try {
+    assert.equal(c.state.viewMode, 'xlsx')
+    c.props.previewVersion = { fileId: 1, versionNo: 2, extension: 'xlsx' }; await flush()
+    assert.equal(c.state.viewMode, 'xlsx')
+    c.props.previewVersion = { fileId: 2, versionNo: 1, extension: 'docx' }; await flush()
+    assert.equal(c.state.viewMode, 'page')
+  } finally { c.app.unmount() }
+})
 test('OCR restores saved text and tables, exports the visible draft without recognizing again', async () => {
   let count = 0, body
   ocrApi.recognize = async () => { count++; return recognition() }

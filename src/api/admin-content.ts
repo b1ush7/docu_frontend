@@ -144,7 +144,7 @@ export const adminDocsApi = {
    * @param versionNo 版本号
    */
   getPreviewMeta(fileId: number, versionNo: number): Promise<VersionPreviewMeta> {
-    return getData<VersionPreviewMeta>(API_ENDPOINTS.admin.preview(fileId, versionNo))
+    return getData<VersionPreviewMeta>(API_ENDPOINTS.admin.preview(fileId, versionNo), { timeout: 120000 })
   },
 
   /**
@@ -160,6 +160,7 @@ export const adminDocsApi = {
       dpi === undefined
         ? API_ENDPOINTS.admin.pagePreview(fileId, versionNo, pageNo)
         : `${API_ENDPOINTS.admin.pagePreview(fileId, versionNo, pageNo)}?dpi=${dpi}`,
+      { timeout: 120000 },
     )
   },
 }

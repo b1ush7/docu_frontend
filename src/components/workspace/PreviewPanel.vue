@@ -113,13 +113,13 @@ const compareLoading = ref(false)
 /** 版本比较失败提示 */
 const compareError = ref('')
 let compareRequest = 0
-watch(() => [currentVersion.value?.fileId, currentVersion.value?.versionNo], () => {
+watch(() => [currentVersion.value?.fileId, currentVersion.value?.versionNo, props.previewVersion?.extension], () => {
   compareRequest++
   compareResult.value = null
   compareError.value = ''
   compareLoading.value = false
-  viewMode.value = 'page'
-})
+  viewMode.value = props.previewVersion?.extension === 'xlsx' ? 'xlsx' : 'page'
+}, { immediate: true })
 
 /**
  * 加载与上一版本的差异。
