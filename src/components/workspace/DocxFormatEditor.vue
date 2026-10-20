@@ -1,4 +1,19 @@
 <script setup lang="ts">
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-button.css'
+import 'element-plus/theme-chalk/el-overlay.css'
+import 'element-plus/theme-chalk/el-dialog.css'
+import 'element-plus/theme-chalk/el-input.css'
+import 'element-plus/theme-chalk/el-input-number.css'
+import 'element-plus/theme-chalk/el-option.css'
+import 'element-plus/theme-chalk/el-scrollbar.css'
+import 'element-plus/theme-chalk/el-popper.css'
+import 'element-plus/theme-chalk/el-tag.css'
+import 'element-plus/theme-chalk/el-option-group.css'
+import 'element-plus/theme-chalk/el-select.css'
+
+import { ElButton, ElDialog, ElInputNumber, ElOption, ElSelect } from 'element-plus'
+
 /**
  * @component DocxFormatEditor
  * @description DOCX 段落格式人工编辑（API.md 4.7）。
@@ -19,6 +34,9 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { docxApi } from '@/api/docx'
+import DraftNotice from './DraftNotice.vue'
+import { useEditorDraft } from '@/composables/useEditorDraft'
+import { useRequestGuard } from '@/composables/useRequestGuard'
 import { ApiError } from '@/api/http'
 import type { DocBlock, DocxParagraphFormatOperation, DocxStructure, Version } from '@/api/types'
 
@@ -27,6 +45,8 @@ const props = defineProps<{
   fileId: number | null
   versionNo: number | null
 }>()
+
+const requestGuard = useRequestGuard(() => [props.modelValue, props.fileId, props.versionNo])
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
@@ -66,27 +86,37 @@ function close(): void {
 
 /** 读取结构 */
 async function loadStructure(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  const isCurrent = requestGuard('loadStructure')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   loading.value = true
   error.value = ''
   try {
-    structure.value = await docxApi.getStructure(props.fileId, props.versionNo)
+    const structureResponse = await docxApi.getStructure(fileId, versionNo)
+    if (!isCurrent()) return
+    structure.value = structureResponse
     operations.value = []
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '结构加载失败'
   } finally {
-    loading.value = false
+    if (isCurrent()) loading.value = false
   }
 }
 
 watch(
   () => [props.modelValue, props.fileId, props.versionNo] as const,
   ([visible]) => {
+    submitting.value = false
+    loading.value = false
     if (!visible) return
     structure.value = null
     operations.value = []
     void loadStructure()
   },
+  { flush: 'sync' },
 )
 
 /** 追加一个格式操作 */
@@ -126,7 +156,12 @@ function preview(block: DocBlock): string {
 
 /** 提交 */
 async function submit(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  if (submitting.value) return
+  const isCurrent = requestGuard('submit')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   if (!operations.value.length) {
     ElMessage.warning('还没有添加任何格式操作')
     return
@@ -137,30 +172,51 @@ async function submit(): Promise<void> {
   }
   submitting.value = true
   try {
-    const version = await docxApi.formatParagraphs(props.fileId, props.versionNo, {
+    const version = await docxApi.formatParagraphs(fileId, versionNo, {
       operations: operations.value,
     })
+    if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved()
     emit('edited', version)
     close()
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '提交失败'
   } finally {
-    submitting.value = false
+    if (isCurrent()) submitting.value = false
   }
+}
+
+const editorDraft = useEditorDraft({
+  busy: () => submitting.value,
+  name: 'DocxFormatEditor', context: () => `${props.fileId}:${props.versionNo}`,
+  enabled: () => props.modelValue && !loading.value,
+  read: () => ({ operations: operations.value }), apply: value => { operations.value = value.operations },
+})
+async function requestClose(): Promise<void> {
+  if (submitting.value || !(await editorDraft.confirmClose())) return
+  emit('update:modelValue', false)
+}
+function beforeClose(done: () => void): void {
+  if (!submitting.value) void editorDraft.confirmClose().then(allowed => { if (allowed) done() })
 }
 </script>
 
 <template>
   <el-dialog
+    :before-close="beforeClose"
+    :close-on-press-escape="!submitting"
     append-to-body
     :model-value="modelValue"
     title="DOCX 段落格式"
     width="780px"
     :close-on-click-modal="false"
-    @update:model-value="emit('update:modelValue', $event)"
+    @update:model-value="value => value ? emit('update:modelValue', true) : requestClose()"
   >
-    <div class="fe">
+    <div class="fe" :inert="submitting">
+      <DraftNotice :draft="editorDraft" />
       <p class="fe__hint">
         只支持<strong>正文或表格单元格中的段落</strong>，页眉页脚段落不在范围内。
         整批操作<strong>只创建一个新版本</strong>。
@@ -210,7 +266,7 @@ async function submit(): Promise<void> {
           <div class="fe__actions">
             <el-button size="small" @click="addOperation">添加格式操作</el-button>
             <span class="fe__spacer" />
-            <el-button size="small" @click="close">取消</el-button>
+            <el-button size="small" @click="requestClose">取消</el-button>
             <el-button type="primary" size="small" :loading="submitting" :disabled="!operations.length" @click="submit">
               提交 {{ operations.length }} 个操作
             </el-button>

@@ -1,4 +1,25 @@
 <script setup lang="ts">
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-button.css'
+import 'element-plus/theme-chalk/el-collapse.css'
+import 'element-plus/theme-chalk/el-collapse-item.css'
+import 'element-plus/theme-chalk/el-overlay.css'
+import 'element-plus/theme-chalk/el-drawer.css'
+import 'element-plus/theme-chalk/el-option.css'
+import 'element-plus/theme-chalk/el-scrollbar.css'
+import 'element-plus/theme-chalk/el-popper.css'
+import 'element-plus/theme-chalk/el-tag.css'
+import 'element-plus/theme-chalk/el-option-group.css'
+import 'element-plus/theme-chalk/el-select.css'
+import 'element-plus/theme-chalk/el-tab-pane.css'
+import 'element-plus/theme-chalk/el-tooltip.css'
+import 'element-plus/theme-chalk/el-checkbox.css'
+import 'element-plus/theme-chalk/el-table.css'
+import 'element-plus/theme-chalk/el-table-column.css'
+import 'element-plus/theme-chalk/el-tabs.css'
+
+import { ElButton, ElCollapse, ElCollapseItem, ElDrawer, ElOption, ElSelect, ElTabPane, ElTable, ElTableColumn, ElTabs } from 'element-plus'
+
 /**
  * @component AdminFileInspectDrawer
  * @description 管理员查看任意用户文件的版本、预览与文档结构（API.md 7.7）。
@@ -12,6 +33,7 @@
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { adminDocsApi } from '@/api/admin-content'
+import { useRequestGuard } from '@/composables/useRequestGuard'
 import { ApiError } from '@/api/http'
 import { saveBlob } from '@/utils/download'
 import { formatBytes, formatDateTime } from '@/utils/format'
@@ -65,97 +87,90 @@ function revokePage(): void {
   }
 }
 
-/** 加载版本列表并默认选最新 */
+const fileGuard = useRequestGuard(() => [props.modelValue, props.fileId])
+const versionGuard = useRequestGuard(() => [props.modelValue, props.fileId, currentVersionNo.value])
+
 async function loadVersions(): Promise<void> {
-  if (props.fileId === null) return
+  const fileId = props.fileId
+  if (fileId === null || !props.modelValue) return
+  const currentRequest = fileGuard()
   loading.value = true
-  error.value = ''
-  versions.value = []
-  currentVersionNo.value = null
   try {
-    const list = await adminDocsApi.listVersions(props.fileId)
+    const list = await adminDocsApi.listVersions(fileId)
+    if (!currentRequest()) return
     versions.value = list
     currentVersionNo.value = list[0]?.versionNo ?? null
   } catch (e) {
-    error.value = e instanceof ApiError ? e.message : '版本列表加载失败'
-  } finally {
-    loading.value = false
-  }
+    if (currentRequest()) error.value = e instanceof ApiError ? e.message : '版本列表加载失败'
+  } finally { if (currentRequest() && currentVersionNo.value === null) loading.value = false }
 }
-
-/** 加载指定版本的元信息、结构与首页图 */
 async function loadVersionDetail(versionNo: number): Promise<void> {
-  if (props.fileId === null) return
+  const fileId = props.fileId
+  if (fileId === null || !props.modelValue) return
+  const currentRequest = versionGuard('detail')
   loading.value = true
-  error.value = ''
-  meta.value = null
-  docxStructure.value = null
-  xlsxStructure.value = null
-  revokePage()
-  pageNo.value = 1
   try {
-    const info = await adminDocsApi.getPreviewMeta(props.fileId, versionNo)
+    const info = await adminDocsApi.getPreviewMeta(fileId, versionNo)
+    if (!currentRequest()) return
     meta.value = info
-    const ext = (versions.value.find((v) => v.versionNo === versionNo)?.extension ?? info.extension ?? '').toLowerCase()
-    if (ext === 'docx') docxStructure.value = await adminDocsApi.getDocxStructure(props.fileId, versionNo)
-    else if (ext === 'xlsx') xlsxStructure.value = await adminDocsApi.getXlsxStructure(props.fileId, versionNo)
+    const ext = (current.value?.extension ?? info.extension ?? '').toLowerCase()
+    if (ext === 'docx') {
+      const structure = await adminDocsApi.getDocxStructure(fileId, versionNo)
+      if (currentRequest()) docxStructure.value = structure
+    } else if (ext === 'xlsx') {
+      const structure = await adminDocsApi.getXlsxStructure(fileId, versionNo)
+      if (currentRequest()) xlsxStructure.value = structure
+    }
+    if (currentRequest() && tab.value === 'page' && info.previewable) void loadPage(1)
   } catch (e) {
-    error.value = e instanceof ApiError ? e.message : '版本详情加载失败'
-  } finally {
-    loading.value = false
-  }
+    if (currentRequest()) error.value = e instanceof ApiError ? e.message : '版本详情加载失败'
+  } finally { if (currentRequest()) loading.value = false }
 }
-
-/** 渲染指定页（PDF/图片/Office 通用预览接口） */
 async function loadPage(target: number): Promise<void> {
-  if (props.fileId === null || currentVersionNo.value === null) return
+  const fileId = props.fileId
+  const versionNo = currentVersionNo.value
+  if (fileId === null || versionNo === null || !props.modelValue) return
+  const currentRequest = versionGuard('page')
   try {
-    const blob = await adminDocsApi.getPageImage(props.fileId, currentVersionNo.value, target)
+    const blob = await adminDocsApi.getPageImage(fileId, versionNo, target)
+    if (!currentRequest()) return
     revokePage()
     pageUrl.value = URL.createObjectURL(blob)
     pageNo.value = target
   } catch (e) {
-    // 503 = 服务端未接入排版后端；422 = 该页无法渲染
-    error.value = e instanceof ApiError ? e.message : '页面渲染失败'
+    if (currentRequest()) error.value = e instanceof ApiError ? e.message : '页面渲染失败'
   }
 }
-
-/** 下载当前版本 */
 async function download(): Promise<void> {
-  if (props.fileId === null || currentVersionNo.value === null) return
+  const fileId = props.fileId
+  const versionNo = currentVersionNo.value
+  const ext = extension.value
+  if (fileId === null || versionNo === null || !props.modelValue) return
+  const currentRequest = versionGuard('download')
   try {
-    const blob = await adminDocsApi.downloadVersion(props.fileId, currentVersionNo.value)
-    // Version 记录没有 originalName，用文件 ID + 版本号 + 扩展名拼一个稳定文件名
-    const name = `file-${props.fileId}-v${currentVersionNo.value}.${extension.value || 'bin'}`
-    saveBlob(blob, name)
+    const blob = await adminDocsApi.downloadVersion(fileId, versionNo)
+    if (currentRequest()) saveBlob(blob, `file-${fileId}-v${versionNo}.${ext || 'bin'}`)
   } catch (e) {
-    error.value = e instanceof ApiError ? e.message : '下载失败'
+    if (currentRequest()) error.value = e instanceof ApiError ? e.message : '下载失败'
   }
 }
-
-// 打开或换文件时重新加载
-watch(
-  () => [props.modelValue, props.fileId] as const,
-  ([visible]) => {
-    if (!visible) {
-      revokePage()
-      return
-    }
-    tab.value = 'overview'
-    void loadVersions()
-  },
-)
-
-// 切版本时重新加载
-watch(currentVersionNo, (no) => {
+function clearVersion(): void {
+  meta.value = null; docxStructure.value = null; xlsxStructure.value = null
+  error.value = ''; loading.value = false; pageNo.value = 1
+  revokePage()
+}
+watch(() => [props.modelValue, props.fileId] as const, ([visible]) => {
+  versions.value = []; currentVersionNo.value = null; clearVersion()
+  tab.value = 'overview'
+  if (visible) void loadVersions()
+}, { immediate: true, flush: 'sync' })
+watch(currentVersionNo, no => {
+  clearVersion()
   if (no !== null && props.modelValue) void loadVersionDetail(no)
+}, { flush: 'sync' })
+watch(tab, value => {
+  if (value === 'page' && !pageUrl.value && meta.value?.previewable) void loadPage(1)
 })
-
-// 切到「版面」页签且还没有图时，加载第一页
-watch(tab, (value) => {
-  if (value === 'page' && !pageUrl.value && totalPages.value > 0) void loadPage(1)
-})
-
 onBeforeUnmount(revokePage)
 </script>
 

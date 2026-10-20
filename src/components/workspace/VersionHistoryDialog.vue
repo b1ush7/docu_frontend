@@ -1,4 +1,21 @@
 <script setup lang="ts">
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-button.css'
+import 'element-plus/theme-chalk/el-overlay.css'
+import 'element-plus/theme-chalk/el-dialog.css'
+import 'element-plus/theme-chalk/el-option.css'
+import 'element-plus/theme-chalk/el-scrollbar.css'
+import 'element-plus/theme-chalk/el-popper.css'
+import 'element-plus/theme-chalk/el-tag.css'
+import 'element-plus/theme-chalk/el-option-group.css'
+import 'element-plus/theme-chalk/el-select.css'
+import 'element-plus/theme-chalk/el-tooltip.css'
+import 'element-plus/theme-chalk/el-checkbox.css'
+import 'element-plus/theme-chalk/el-table.css'
+import 'element-plus/theme-chalk/el-table-column.css'
+
+import { ElButton, ElDialog, ElOption, ElSelect, ElTable, ElTableColumn } from 'element-plus'
+
 import { computed, ref, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { fileApi } from '@/api/file'
@@ -87,9 +104,9 @@ function updateVisible(value: boolean): void { if (!busy.value) emit('update:mod
       <el-table-column prop="resultSummary" label="变更说明" min-width="140" />
       <el-table-column label="时间" width="130"><template #default="{ row }">{{ formatTime(row.createTime) }}</template></el-table-column>
       <el-table-column label="操作" width="210"><template #default="{ row }">
-        <el-button link :disabled="busy" @click="history.file.value && emit('preview', history.file.value, row)">打开</el-button>
-        <el-button link :disabled="busy" :loading="downloading === row.versionNo" @click="download(row)">下载</el-button>
-        <el-button link :disabled="busy || row.versionNo === history.file.value?.latestVersion" @click="restore(row)">恢复</el-button>
+        <el-button link :disabled="busy" @click="history.file.value && emit('preview', history.file.value, row as Version)">打开</el-button>
+        <el-button link :disabled="busy" :loading="downloading === row.versionNo" @click="download(row as Version)">下载</el-button>
+        <el-button link :disabled="busy || row.versionNo === history.file.value?.latestVersion" @click="restore(row as Version)">恢复</el-button>
       </template></el-table-column>
     </el-table>
     <section v-if="history.versions.value.length > 1" class="version-comparison">

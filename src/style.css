@@ -159,3 +159,13 @@ body::after {
 .el-drawer {
   border-radius: var(--radius);
 }
+
+/* Keep overlays and admin lists usable on narrow screens. */
+.el-dialog, .el-drawer { max-width: 96vw; }
+.page-card { min-width: 0; }
+.filter-bar { flex-wrap: wrap; }
+@media (max-width: 768px) {
+  .el-dialog { --el-dialog-width: 96vw; }
+  .el-pagination { flex-wrap: wrap; justify-content: center; gap: 6px; }
+  .page-card { padding: 12px; }
+}

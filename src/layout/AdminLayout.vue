@@ -102,7 +102,35 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-alert.css'
+import 'element-plus/theme-chalk/el-aside.css'
+import 'element-plus/theme-chalk/el-breadcrumb.css'
+import 'element-plus/theme-chalk/el-breadcrumb-item.css'
+import 'element-plus/theme-chalk/el-button.css'
+import 'element-plus/theme-chalk/el-container.css'
+import 'element-plus/theme-chalk/el-footer.css'
+import 'element-plus/theme-chalk/el-header.css'
+import 'element-plus/theme-chalk/el-main.css'
+import 'element-plus/theme-chalk/el-overlay.css'
+import 'element-plus/theme-chalk/el-dialog.css'
+import 'element-plus/theme-chalk/el-scrollbar.css'
+import 'element-plus/theme-chalk/el-popper.css'
+import 'element-plus/theme-chalk/el-button-group.css'
+import 'element-plus/theme-chalk/el-dropdown.css'
+import 'element-plus/theme-chalk/el-dropdown-item.css'
+import 'element-plus/theme-chalk/el-dropdown-menu.css'
+import 'element-plus/theme-chalk/el-form.css'
+import 'element-plus/theme-chalk/el-form-item.css'
+import 'element-plus/theme-chalk/el-input.css'
+import 'element-plus/theme-chalk/el-tooltip.css'
+import 'element-plus/theme-chalk/el-menu.css'
+import 'element-plus/theme-chalk/el-menu-item.css'
+import 'element-plus/theme-chalk/el-tag.css'
+
+import { ElAlert, ElAside, ElBreadcrumb, ElBreadcrumbItem, ElButton, ElContainer, ElDialog, ElDropdown, ElDropdownItem, ElDropdownMenu, ElForm, ElFormItem, ElHeader, ElIcon, ElInput, ElMain, ElMenu, ElMenuItem, ElTag } from 'element-plus'
+
+import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DataAnalysis, User, Folder, List, Fold, Expand, ArrowDown, Cpu, Document, Files } from '@element-plus/icons-vue'
@@ -111,7 +139,11 @@ import { changePassword } from '../api/admin-auth'
 
 const router = useRouter()
 const auth = useAuthStore()
-const collapsed = ref(false)
+const mobileQuery = typeof window === 'undefined' ? undefined : window.matchMedia?.('(max-width: 768px)')
+const collapsed = ref(mobileQuery?.matches ?? false)
+function onViewportChange(event) { collapsed.value = event.matches }
+onMounted(() => mobileQuery?.addEventListener('change', onViewportChange))
+onBeforeUnmount(() => mobileQuery?.removeEventListener('change', onViewportChange))
 
 const pwdVisible = ref(false)
 const pwdLoading = ref(false)
@@ -222,5 +254,10 @@ async function submitPwd() {
 .main {
   background: transparent;
   overflow-y: auto;
+}
+.admin-layout > .el-container { min-width: 0; }
+@media (max-width: 768px) {
+  .header { padding: 8px 12px; height: auto; min-height: 56px; flex-wrap: wrap; gap: 8px; }
+  .main { padding: 10px; min-width: 0; }
 }
 </style>

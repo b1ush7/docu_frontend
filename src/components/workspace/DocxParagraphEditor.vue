@@ -1,4 +1,14 @@
 <script setup lang="ts">
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-button.css'
+import 'element-plus/theme-chalk/el-overlay.css'
+import 'element-plus/theme-chalk/el-dialog.css'
+import 'element-plus/theme-chalk/el-input.css'
+import 'element-plus/theme-chalk/el-tab-pane.css'
+import 'element-plus/theme-chalk/el-tabs.css'
+
+import { ElButton, ElDialog, ElInput, ElTabPane, ElTabs } from 'element-plus'
+
 /**
  * @component DocxParagraphEditor
  * @description DOCX 段落级人工编辑（API.md 4.4 替换段落文本、4.5 插入或删除段落）。
@@ -18,6 +28,9 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { docxApi } from '@/api/docx'
+import DraftNotice from './DraftNotice.vue'
+import { useEditorDraft } from '@/composables/useEditorDraft'
+import { useRequestGuard } from '@/composables/useRequestGuard'
 import { ApiError } from '@/api/http'
 import type {
   DocBlock,
@@ -32,6 +45,8 @@ const props = defineProps<{
   fileId: number | null
   versionNo: number | null
 }>()
+
+const requestGuard = useRequestGuard(() => [props.modelValue, props.fileId, props.versionNo])
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
@@ -72,19 +87,25 @@ function close(): void {
 
 /** 加载最新结构，并重置草稿 */
 async function loadStructure(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  const isCurrent = requestGuard('loadStructure')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   loading.value = true
   error.value = ''
   try {
-    const value = await docxApi.getStructure(props.fileId, props.versionNo)
+    const value = await docxApi.getStructure(fileId, versionNo)
+    if (!isCurrent()) return
     structure.value = value
     drafts.value = Object.fromEntries(value.blocks.map((b) => [b.blockId, b.text ?? '']))
     edits.value = []
   } catch (e) {
+    if (!isCurrent()) return
     // 400/415：不是 DOCX
     error.value = e instanceof ApiError ? e.message : '结构加载失败'
   } finally {
-    loading.value = false
+    if (isCurrent()) loading.value = false
   }
 }
 
@@ -92,6 +113,8 @@ async function loadStructure(): Promise<void> {
 watch(
   () => [props.modelValue, props.fileId, props.versionNo] as const,
   ([visible]) => {
+    submitting.value = false
+    loading.value = false
     if (!visible) return
     tab.value = 'replace'
     structure.value = null
@@ -99,11 +122,17 @@ watch(
     edits.value = []
     void loadStructure()
   },
+  { flush: 'sync' },
 )
 
 /** 批量替换段落文本 */
 async function submitReplace(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  if (submitting.value) return
+  const isCurrent = requestGuard('submitReplace')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   if (!changed.value.length) {
     ElMessage.warning('没有任何修改')
     return
@@ -114,16 +143,20 @@ async function submitReplace(): Promise<void> {
   }
   submitting.value = true
   try {
-    const version = await docxApi.replaceParagraphText(props.fileId, props.versionNo, {
+    const version = await docxApi.replaceParagraphText(fileId, versionNo, {
       operations: changed.value,
     })
+    if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved(['drafts'])
     emit('edited', version)
     close()
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '替换失败'
   } finally {
-    submitting.value = false
+    if (isCurrent()) submitting.value = false
   }
 }
 
@@ -155,7 +188,12 @@ function removeEdit(index: number): void {
 
 /** 提交插入/删除 */
 async function submitEdits(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  if (submitting.value) return
+  const isCurrent = requestGuard('submitEdits')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   if (!edits.value.length) {
     ElMessage.warning('还没有添加任何操作')
     return
@@ -166,30 +204,51 @@ async function submitEdits(): Promise<void> {
   }
   submitting.value = true
   try {
-    const version = await docxApi.editParagraphs(props.fileId, props.versionNo, {
+    const version = await docxApi.editParagraphs(fileId, versionNo, {
       operations: edits.value,
     })
+    if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved(['edits'])
     emit('edited', version)
     close()
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '提交失败'
   } finally {
-    submitting.value = false
+    if (isCurrent()) submitting.value = false
   }
+}
+
+const editorDraft = useEditorDraft({
+  busy: () => submitting.value,
+  name: 'DocxParagraphEditor', context: () => `${props.fileId}:${props.versionNo}`,
+  enabled: () => props.modelValue && !loading.value,
+  read: () => ({ drafts: drafts.value, edits: edits.value }), apply: value => { drafts.value = value.drafts; edits.value = value.edits },
+})
+async function requestClose(): Promise<void> {
+  if (submitting.value || !(await editorDraft.confirmClose())) return
+  emit('update:modelValue', false)
+}
+function beforeClose(done: () => void): void {
+  if (!submitting.value) void editorDraft.confirmClose().then(allowed => { if (allowed) done() })
 }
 </script>
 
 <template>
   <el-dialog
+    :before-close="beforeClose"
+    :close-on-press-escape="!submitting"
     append-to-body
     :model-value="modelValue"
     title="DOCX 段落编辑"
     width="820px"
     :close-on-click-modal="false"
-    @update:model-value="emit('update:modelValue', $event)"
+    @update:model-value="value => value ? emit('update:modelValue', true) : requestClose()"
   >
-    <div class="pe">
+    <div class="pe" :inert="submitting">
+      <DraftNotice :draft="editorDraft" />
       <p class="pe__hint">
         <strong>整批操作只创建一个新版本</strong>。编辑后 <code>blockId</code> 会失效，本对话框提交成功后会重新读取结构。
       </p>
@@ -219,7 +278,7 @@ async function submitEdits(): Promise<void> {
             </label>
           </div>
           <div class="pe__actions">
-            <el-button size="small" @click="close">取消</el-button>
+            <el-button size="small" @click="requestClose">取消</el-button>
             <el-button type="primary" size="small" :loading="submitting" :disabled="!changed.length" @click="submitReplace">
               提交 {{ changed.length }} 处替换
             </el-button>
@@ -265,7 +324,7 @@ async function submitEdits(): Promise<void> {
               </div>
             </div>
             <div class="pe__actions">
-              <el-button size="small" @click="close">取消</el-button>
+              <el-button size="small" @click="requestClose">取消</el-button>
               <el-button type="primary" size="small" :loading="submitting" @click="submitEdits">
                 提交 {{ edits.length }} 个操作
               </el-button>

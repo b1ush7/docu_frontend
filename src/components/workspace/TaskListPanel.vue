@@ -10,6 +10,7 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { taskApi } from '@/api/task'
+import { useRequestGuard } from '@/composables/useRequestGuard'
 import { ApiError } from '@/api/http'
 import { formatTime } from '@/utils/format'
 import { taskStatusLabel, taskTypeLabel } from '@/constants/task'
@@ -61,58 +62,40 @@ const hasMore = computed(() => tasks.value.length < total.value)
  * 拉取任务列表
  * @param mode reset 首屏 / 刷新：覆盖列表；append 加载更多：追加到现有列表尾部
  */
+const requestGuard = useRequestGuard(() => [props.currentFileId, props.keyword])
+const searching = computed(() => !!props.keyword?.trim())
 async function fetchTasks(mode: 'reset' | 'append' = 'reset'): Promise<void> {
-  loading.value = true
-  listError.value = ''
+  if (mode === 'append' && loading.value) return
+  const current = requestGuard()
+  const fileId = props.currentFileId
+  let nextPage = mode === 'reset' ? 1 : page.value + 1
+  loading.value = true; listError.value = ''
+  if (mode === 'reset') { tasks.value = []; total.value = 0 }
   try {
-    // 选中文件时按文件查询：接口一次性返回该文件全部任务（按创建时间倒序），无需分页
-    if (props.currentFileId !== null && props.currentFileId !== undefined) {
-      const list = await taskApi.listByFile(props.currentFileId)
-      tasks.value = list
-      total.value = list.length
+    if (fileId != null) {
+      const list = await taskApi.listByFile(fileId)
+      if (!current()) return
+      tasks.value = list; total.value = list.length; page.value = 1
       return
     }
-    // 未选中文件：全量分页查询当前用户任务
-    const result = await taskApi.list({ page: page.value, size: PAGE_SIZE })
-    // reset 覆盖、append 拼接，加载更多时不打断滚动位置
-    tasks.value = mode === 'reset' ? result.records : [...tasks.value, ...result.records]
-    total.value = result.total
+    // The existing API has no keyword filter. Search scans all pages, canceling when context changes.
+    do {
+      const result = await taskApi.list({ page: nextPage, size: PAGE_SIZE })
+      if (!current()) return
+      const existing = new Map(tasks.value.map(task => [task.id, task]))
+      result.records.forEach(task => existing.set(task.id, task))
+      tasks.value = [...existing.values()]; total.value = result.total; page.value = nextPage
+      if (!searching.value || !result.records.length || nextPage >= result.pages || nextPage * PAGE_SIZE >= result.total) break
+      nextPage++
+    } while (current())
   } catch (e) {
-    listError.value = e instanceof ApiError ? e.message : '任务列表加载失败'
-  } finally {
-    loading.value = false
-  }
+    if (current()) listError.value = e instanceof ApiError ? e.message : '任务列表加载失败，搜索结果可能不完整'
+  } finally { if (current()) loading.value = false }
 }
-
-/** 首次进入拉取第一页 */
-onMounted(() => {
-  void fetchTasks('reset')
-})
-
-// 选中文件变化时：回到第一页并按新模式重新拉取
-watch(
-  () => props.currentFileId,
-  () => {
-    page.value = 1
-    void fetchTasks('reset')
-  },
-)
-
-/**
- * 加载下一页并追加到列表（仅全量分页模式可见）
- */
-async function loadMore(): Promise<void> {
-  page.value += 1
-  await fetchTasks('append')
-}
-
-/**
- * 刷新列表：回到第一页重新拉取（对外暴露，供父组件在提交任务等场景调用）
- */
-function refresh(): void {
-  page.value = 1
-  void fetchTasks('reset')
-}
+onMounted(() => { void fetchTasks() })
+watch(() => [props.currentFileId, props.keyword], () => { void fetchTasks() }, { flush: 'sync' })
+async function loadMore(): Promise<void> { if (!loading.value) await fetchTasks('append') }
+function refresh(): void { void fetchTasks() }
 
 // ==================== 选中与展示辅助 ====================
 
@@ -126,13 +109,7 @@ function selectTask(task: Task): void {
 
 // ==================== 全局搜索过滤 ====================
 
-/**
- * 本地过滤后的任务列表：
- * 任务列表接口（GET /task/list、GET /task/by-file/{fileId}）不支持关键字参数，
- * 因此搜索只能对已加载条目做本地匹配（任务名称 / 指令摘要 / 状态文案 / 时间文本）。
- * 局限：全量分页模式下仅能过滤已加载页，搜索时如需完整结果可点"加载更多"；
- * 按文件查询模式下列表即全量，本地过滤结果完整。
- */
+/** Search filters the complete file history or all scanned user pages. */
 const filteredTasks = computed(() => {
   const kw = props.keyword?.trim().toLowerCase()
   // 无关键字直接返回原列表
@@ -161,6 +138,7 @@ defineExpose({ refresh })
   <div class="task-list">
     <!-- 列表主体：加载 / 错误 / 空 / 数据 四种状态 -->
     <div class="task-list__body">
+      <p v-if="searching && loading" class="task-list__hint" role="status">正在搜索全部任务，已读取 {{ tasks.length }} / {{ total || '…' }} 条…</p>
       <p v-if="loading && tasks.length === 0" class="task-list__hint">加载中…</p>
 
       <template v-else-if="listError">
@@ -203,7 +181,7 @@ defineExpose({ refresh })
 
         <!-- 加载更多（按文件查询模式下 hasMore 恒为 false，不会显示） -->
         <button
-          v-if="hasMore"
+          v-if="hasMore && !searching"
           class="task-list__more-btn"
           type="button"
           :disabled="loading"

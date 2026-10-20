@@ -4,6 +4,7 @@
  *              回复生成后需要用户确认才会落版本；确认与放弃都只能基于已保存的回复。
  */
 
+import { createSseParser } from '@/utils/sse'
 import { API_ENDPOINTS } from './endpoints'
 import { deleteData, getData, http, postData } from './http'
 import type {
@@ -104,7 +105,7 @@ export const aiApi = {
    *   `error`     → 统一错误对象
    *
    * 实现说明：浏览器端用 axios 的 `onDownloadProgress` 读取增量
-   * （XHR 的 responseText 会随下载增长），按 `\n\n` 切分事件块。
+   * （XHR 的 responseText 会随下载增长），兼容 LF、CRLF 与跨分片事件。
    * 断线或超时由调用方 abort；模型不支持流式时后端会退回同步并一次性发完整文本，协议不变。
    *
    * @param sessionId 会话 ID
@@ -119,39 +120,15 @@ export const aiApi = {
     signal?: AbortSignal,
   ): Promise<void> {
     let consumed = 0
-    let buffer = ''
-
-    /** 解析已到达的完整事件块 */
-    const drain = (text: string): void => {
-      buffer += text
-      let index = buffer.indexOf('\n\n')
-      while (index >= 0) {
-        const chunk = buffer.slice(0, index)
-        buffer = buffer.slice(index + 2)
-        const name = /^event:\s*(.+)$/m.exec(chunk)?.[1]?.trim() ?? 'message'
-        const data = chunk
-          .split('\n')
-          .filter((line) => line.startsWith('data:'))
-          .map((line) => line.slice(5).trim())
-          .join('\n')
-        if (data) {
-          try {
-            const parsed = JSON.parse(data)
-            if (name === 'started') onEvent({ event: 'started', replyId: parsed.replyId })
-            else if (name === 'delta') onEvent({ event: 'delta', text: parsed.text ?? '' })
-            else if (name === 'completed') onEvent({ event: 'completed', reply: parsed })
-            else if (name === 'error') {
-              onEvent({ event: 'error', message: parsed.msg ?? parsed.message ?? '流式回复失败' })
-            }
-          } catch {
-            // 非法 JSON 不阻断流；交由后续 completed 事件兜底
-          }
-        }
-        index = buffer.indexOf('\n\n')
-      }
-    }
-
-    await http.post(API_ENDPOINTS.ai.replyStream(sessionId), body, {
+    const parser = createSseParser((name, data) => {
+      let parsed
+      try { parsed = JSON.parse(data) } catch { return }
+      if (name === 'started') onEvent({ event: 'started', replyId: parsed.replyId })
+      else if (name === 'delta') onEvent({ event: 'delta', text: parsed.text ?? '' })
+      else if (name === 'completed') onEvent({ event: 'completed', reply: parsed })
+      else if (name === 'error') onEvent({ event: 'error', message: parsed.msg ?? parsed.message ?? '流式回复失败' })
+    })
+    const response = await http.post(API_ENDPOINTS.ai.replyStream(sessionId), body, {
       responseType: 'text',
       signal,
       // SSE 连接可能持续较久，不能沿用默认 15 秒超时
@@ -162,10 +139,15 @@ export const aiApi = {
         const xhr = event.event?.target as XMLHttpRequest | undefined
         const text = xhr?.responseText ?? ''
         if (text.length > consumed) {
-          drain(text.slice(consumed))
+          parser.push(text.slice(consumed))
           consumed = text.length
         }
       },
     })
+    // Some adapters only supply text at completion; consume the remainder exactly once.
+    if (typeof response.data === 'string' && response.data.length > consumed) {
+      parser.push(response.data.slice(consumed))
+    }
+    parser.finish()
   },
 }

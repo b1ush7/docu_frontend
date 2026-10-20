@@ -1,4 +1,18 @@
 <script setup lang="ts">
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-overlay.css'
+import 'element-plus/theme-chalk/el-dialog.css'
+import 'element-plus/theme-chalk/el-input.css'
+import 'element-plus/theme-chalk/el-input-number.css'
+import 'element-plus/theme-chalk/el-option.css'
+import 'element-plus/theme-chalk/el-scrollbar.css'
+import 'element-plus/theme-chalk/el-popper.css'
+import 'element-plus/theme-chalk/el-tag.css'
+import 'element-plus/theme-chalk/el-option-group.css'
+import 'element-plus/theme-chalk/el-select.css'
+
+import { ElDialog, ElInput, ElInputNumber, ElOption, ElSelect } from 'element-plus'
+
 /**
  * @component ImageEditDialog
  * @description PNG/JPEG 的受控像素编辑与格式转换（API.md 3.20）。
@@ -13,6 +27,9 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { fileApi } from '@/api/file'
+import DraftNotice from './DraftNotice.vue'
+import { useEditorDraft } from '@/composables/useEditorDraft'
+import { useRequestGuard } from '@/composables/useRequestGuard'
 import { ApiError } from '@/api/http'
 import type { ImageEditOperation, ImageEditType, Version } from '@/api/types'
 
@@ -21,6 +38,8 @@ const props = defineProps<{
   fileId: number | null
   versionNo: number | null
 }>()
+
+const requestGuard = useRequestGuard(() => [props.modelValue, props.fileId, props.versionNo])
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
@@ -86,19 +105,26 @@ function onTypeChange(): void {
 
 // 打开时重置
 watch(
-  () => props.modelValue,
-  (visible) => {
+  () => [props.modelValue, props.fileId, props.versionNo] as const,
+  ([visible]) => {
+    submitting.value = false
     if (!visible) return
     operations.value = []
     outputFormat.value = 'PNG'
     jpegQuality.value = 0.9
     error.value = ''
   },
+  { flush: 'sync' },
 )
 
 /** 提交编辑 */
 async function submit(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  if (submitting.value) return
+  const isCurrent = requestGuard('submit')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   if (!operations.value.length) {
     error.value = '至少添加一个操作'
     return
@@ -106,33 +132,54 @@ async function submit(): Promise<void> {
   submitting.value = true
   error.value = ''
   try {
-    const version = await fileApi.editImage(props.fileId, props.versionNo, {
+    const version = await fileApi.editImage(fileId, versionNo, {
       outputFormat: outputFormat.value,
       jpegQuality: outputFormat.value === 'JPEG' ? jpegQuality.value : undefined,
       operations: operations.value as ImageEditOperation[],
     })
+    if (!isCurrent()) return
     ElMessage.success('已生成新版本')
+    submitting.value = false
+    editorDraft.saved()
     emit('edited', version)
     close()
   } catch (e) {
+    if (!isCurrent()) return
     // 415：不是图片；422：图片损坏或参数不可执行；400：操作不合法
     error.value = e instanceof ApiError ? e.message : '图片编辑失败'
   } finally {
-    submitting.value = false
+    if (isCurrent()) submitting.value = false
   }
+}
+
+const editorDraft = useEditorDraft({
+  busy: () => submitting.value,
+  name: 'ImageEditDialog', context: () => `${props.fileId}:${props.versionNo}`,
+  enabled: () => props.modelValue,
+  read: () => ({ operations: operations.value, outputFormat: outputFormat.value, jpegQuality: jpegQuality.value }), apply: value => { operations.value = value.operations; outputFormat.value = value.outputFormat; jpegQuality.value = value.jpegQuality },
+})
+async function requestClose(): Promise<void> {
+  if (submitting.value || !(await editorDraft.confirmClose())) return
+  emit('update:modelValue', false)
+}
+function beforeClose(done: () => void): void {
+  if (!submitting.value) void editorDraft.confirmClose().then(allowed => { if (allowed) done() })
 }
 </script>
 
 <template>
   <el-dialog
+    :before-close="beforeClose"
+    :close-on-press-escape="!submitting"
     append-to-body
     :model-value="modelValue"
     title="图片编辑"
     width="720px"
     :close-on-click-modal="false"
-    @update:model-value="emit('update:modelValue', $event)"
+    @update:model-value="value => value ? emit('update:modelValue', true) : requestClose()"
   >
-    <div class="img">
+    <div class="img" :inert="submitting">
+      <DraftNotice :draft="editorDraft" />
       <p class="img__hint">
         操作<strong>按顺序依次执行</strong>，顺序会影响结果（先裁剪再旋转 ≠ 先旋转再裁剪）。单次最多 20 个操作，提交后创建一个新版本。
       </p>
@@ -222,7 +269,7 @@ async function submit(): Promise<void> {
     </div>
 
     <template #footer>
-      <button class="img__btn" type="button" @click="close">取消</button>
+      <button class="img__btn" type="button" @click="requestClose">取消</button>
       <button class="img__btn img__btn--primary" type="button" :disabled="submitting || !operations.length" @click="submit">
         {{ submitting ? '提交中…' : '生成新版本' }}
       </button>

@@ -1,4 +1,23 @@
 <script setup lang="ts">
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-button.css'
+import 'element-plus/theme-chalk/el-overlay.css'
+import 'element-plus/theme-chalk/el-dialog.css'
+import 'element-plus/theme-chalk/el-input.css'
+import 'element-plus/theme-chalk/el-option.css'
+import 'element-plus/theme-chalk/el-scrollbar.css'
+import 'element-plus/theme-chalk/el-popper.css'
+import 'element-plus/theme-chalk/el-tag.css'
+import 'element-plus/theme-chalk/el-option-group.css'
+import 'element-plus/theme-chalk/el-select.css'
+import 'element-plus/theme-chalk/el-pagination.css'
+import 'element-plus/theme-chalk/el-tooltip.css'
+import 'element-plus/theme-chalk/el-checkbox.css'
+import 'element-plus/theme-chalk/el-table.css'
+import 'element-plus/theme-chalk/el-table-column.css'
+
+import { ElButton, ElDialog, ElInput, ElOption, ElPagination, ElSelect, ElTable, ElTableColumn, ElTag } from 'element-plus'
+
 /**
  * @component TemplatesView
  * @description 公共模板管理（API.md 7.12 / 7.13）。
@@ -348,12 +367,12 @@ onMounted(load)
       </el-table-column>
       <el-table-column label="操作" width="330" fixed="right">
         <template #default="{ row }">
-          <el-button link size="small" @click="openEdit(row)">编辑</el-button>
-          <el-button link size="small" @click="openVersions(row)">版本</el-button>
-          <el-button link size="small" :disabled="!row.hasFile" :loading="replacing === row.id" @click="replaceContent(row)">换文件</el-button>
-          <el-button link size="small" :disabled="!row.hasFile" @click="download(row)">下载</el-button>
-          <el-button link size="small" @click="toggleEnabled(row)">{{ row.enabled ? '停用' : '启用' }}</el-button>
-          <el-button link size="small" type="danger" @click="remove(row)">删除</el-button>
+          <el-button link size="small" @click="openEdit(row as DocTemplate)">编辑</el-button>
+          <el-button link size="small" @click="openVersions(row as DocTemplate)">版本</el-button>
+          <el-button link size="small" :disabled="!row.hasFile" :loading="replacing === row.id" @click="replaceContent(row as DocTemplate)">换文件</el-button>
+          <el-button link size="small" :disabled="!row.hasFile" @click="download(row as DocTemplate)">下载</el-button>
+          <el-button link size="small" @click="toggleEnabled(row as DocTemplate)">{{ row.enabled ? '停用' : '启用' }}</el-button>
+          <el-button link size="small" type="danger" @click="remove(row as DocTemplate)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -431,8 +450,8 @@ onMounted(load)
         </el-table-column>
         <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
-            <el-button link size="small" @click="downloadVersion(row)">下载</el-button>
-            <el-button link size="small" @click="restoreVersion(row)">恢复</el-button>
+            <el-button link size="small" @click="downloadVersion(row as DocTemplateVersion)">下载</el-button>
+            <el-button link size="small" @click="restoreVersion(row as DocTemplateVersion)">恢复</el-button>
           </template>
         </el-table-column>
       </el-table>

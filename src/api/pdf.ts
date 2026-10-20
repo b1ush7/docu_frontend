@@ -53,6 +53,6 @@ export const pdfApi = {
     versionNo: number,
     params: ConvertPdfToDocxParams,
   ): Promise<Version> {
-    return postData<Version>(API_ENDPOINTS.file.pdfConvertToDocx(fileId, versionNo), params)
+    return postData<Version>(API_ENDPOINTS.file.pdfConvertToDocx(fileId, versionNo), params, { timeout: 120000 })
   },
 }

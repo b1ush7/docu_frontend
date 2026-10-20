@@ -1,4 +1,30 @@
 <script setup lang="ts">
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-button.css'
+import 'element-plus/theme-chalk/el-checkbox.css'
+import 'element-plus/theme-chalk/el-collapse.css'
+import 'element-plus/theme-chalk/el-collapse-item.css'
+import 'element-plus/theme-chalk/el-input.css'
+import 'element-plus/theme-chalk/el-input-number.css'
+import 'element-plus/theme-chalk/el-option.css'
+import 'element-plus/theme-chalk/el-scrollbar.css'
+import 'element-plus/theme-chalk/el-popper.css'
+import 'element-plus/theme-chalk/el-tag.css'
+import 'element-plus/theme-chalk/el-option-group.css'
+import 'element-plus/theme-chalk/el-select.css'
+import 'element-plus/theme-chalk/el-tab-pane.css'
+import 'element-plus/theme-chalk/el-tooltip.css'
+import 'element-plus/theme-chalk/el-table.css'
+import 'element-plus/theme-chalk/el-table-column.css'
+import 'element-plus/theme-chalk/el-tabs.css'
+
+import { ElButton, ElCheckbox, ElCollapse, ElCollapseItem, ElInput, ElInputNumber, ElOption, ElSelect, ElTabPane, ElTable, ElTableColumn, ElTabs } from 'element-plus'
+
+import DraftNotice from './DraftNotice.vue'
+import ImageAssetPicker from './ImageAssetPicker.vue'
+import { useEditorDraft } from '@/composables/useEditorDraft'
+import { useRequestGuard } from '@/composables/useRequestGuard'
+
 /**
  * @component XlsxEditor
  * @description XLSX 结构化查看与单元格编辑（API.md 3.13 / 3.17 / 3.19）。
@@ -39,6 +65,8 @@ const props = defineProps<{
   versionNo: number | null
 }>()
 
+const requestGuard = useRequestGuard(() => [props.modelValue, props.fileId, props.versionNo])
+
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
   (e: 'edited', version: Version): void
@@ -63,56 +91,64 @@ const ops = ref<XlsxCellEditOperation[]>([])
 const sheets = computed(() => structure.value?.sheets ?? [])
 
 async function load(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  const isCurrent = requestGuard('load')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   loading.value = true
   error.value = ''
   structure.value = null
   try {
-    structure.value = await xlsxApi.getStructure(props.fileId, props.versionNo)
+    const structureResponse = await xlsxApi.getStructure(fileId, versionNo)
+    if (!isCurrent()) return
+    structure.value = structureResponse
     sheetName.value = structure.value.sheets[0]?.name ?? ''
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '结构加载失败'
   } finally {
-    loading.value = false
+    if (isCurrent()) loading.value = false
   }
 }
 
-watch(
-  () => [props.modelValue, props.fileId, props.versionNo] as const,
-  ([visible]) => {
-    if (!visible) return
-    tab.value = 'browse'
-    ops.value = []
-    rangeResult.value = null
-    formulaResult.value = null
-    rangeText.value = 'A1:C10'
-    void load()
-  },
-)
-
 /** 读取区域（含空白位） */
 async function loadRange(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null || !sheetName.value) return
+  const isCurrent = requestGuard('loadRange')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null || !sheetName.value) return
   error.value = ''
   try {
-    rangeResult.value = await xlsxApi.getRange(props.fileId, props.versionNo, sheetName.value, rangeText.value.trim())
+    const rangeResultResponse = await xlsxApi.getRange(fileId, versionNo, sheetName.value, rangeText.value.trim())
+    if (!isCurrent()) return
+    rangeResult.value = rangeResultResponse
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '区域读取失败'
   }
 }
 
 /** 即时计算公式（不写回文件） */
 async function loadFormulas(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null || !sheetName.value) return
+  const isCurrent = requestGuard('loadFormulas')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null || !sheetName.value) return
   error.value = ''
   try {
-    formulaResult.value = await xlsxApi.calculateFormulas(
-      props.fileId,
-      props.versionNo,
+    const formulaResultResponse = await xlsxApi.calculateFormulas(
+      fileId,
+      versionNo,
       sheetName.value,
       rangeText.value.trim(),
     )
+    if (!isCurrent()) return
+    formulaResult.value = formulaResultResponse
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '公式计算失败'
   }
 }
@@ -132,7 +168,12 @@ function removeOp(index: number): void {
 
 /** 提交单元格编辑 */
 async function submit(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  if (submitting.value) return
+  const isCurrent = requestGuard('submit')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   if (!ops.value.length) {
     ElMessage.warning('还没有添加任何操作')
     return
@@ -148,14 +189,17 @@ async function submit(): Promise<void> {
   }
   submitting.value = true
   try {
-    const version = await xlsxApi.editCells(props.fileId, props.versionNo, { operations: ops.value })
+    const version = await xlsxApi.editCells(fileId, versionNo, { operations: ops.value })
+    if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved(['ops'])
     emit('edited', version)
-    close()
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '提交失败'
   } finally {
-    submitting.value = false
+    if (isCurrent()) submitting.value = false
   }
 }
 
@@ -175,37 +219,46 @@ const imageOp = ref<XlsxImageOperation>({
 
 /** 三个接口共用的一次性提交 */
 async function submitMisc(kind: 'data' | 'format' | 'image'): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  if (submitting.value) return
+  const isCurrent = requestGuard('submitMisc')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   let run: Promise<Version>
   if (kind === 'data') {
     if (!dataOp.value.sheetName || !dataOp.value.range) {
       ElMessage.warning('排序/筛选需要工作表与区域')
       return
     }
-    run = xlsxApi.editData(props.fileId, props.versionNo, { operations: [dataOp.value] })
+    run = xlsxApi.editData(fileId, versionNo, { operations: [dataOp.value] })
   } else if (kind === 'format') {
     if (!formatOp.value.sheetName || !formatOp.value.range) {
       ElMessage.warning('格式设置需要工作表与区域')
       return
     }
-    run = xlsxApi.formatCells(props.fileId, props.versionNo, { operations: [formatOp.value] })
+    run = xlsxApi.formatCells(fileId, versionNo, { operations: [formatOp.value] })
   } else {
     if (!imageOp.value.sheetName || !imageOp.value.cell || !imageOp.value.imageFileId) {
-      ElMessage.warning('内嵌图片需要工作表、单元格与图片文件 ID')
+      ElMessage.warning('内嵌图片需要工作表、单元格与已选图片')
       return
     }
-    run = xlsxApi.insertImages(props.fileId, props.versionNo, { operations: [imageOp.value] })
+    run = xlsxApi.insertImages(fileId, versionNo, { operations: [imageOp.value] })
   }
   submitting.value = true
   error.value = ''
   try {
     const version = await run
+    if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved([kind === 'data' ? 'dataOp' : kind === 'format' ? 'formatOp' : 'imageOp'])
     emit('edited', version)
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '提交失败'
   } finally {
-    submitting.value = false
+    if (isCurrent()) submitting.value = false
   }
 }
 
@@ -221,22 +274,31 @@ function removeStructOp(index: number): void {
 }
 
 async function submitStruct(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  if (submitting.value) return
+  const isCurrent = requestGuard('submitStruct')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   if (!structOps.value.length) {
     ElMessage.warning('还没有添加行列操作')
     return
   }
   submitting.value = true
   try {
-    const version = await xlsxApi.editStructure(props.fileId, props.versionNo, {
+    const version = await xlsxApi.editStructure(fileId, versionNo, {
       operations: structOps.value,
     })
+    if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved(['structOps'])
     emit('edited', version)
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '行列编辑失败'
   } finally {
-    submitting.value = false
+    if (isCurrent()) submitting.value = false
   }
 }
 
@@ -252,7 +314,12 @@ function removeSheetOp(index: number): void {
 }
 
 async function submitSheet(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  if (submitting.value) return
+  const isCurrent = requestGuard('submitSheet')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   if (!sheetOps.value.length) {
     ElMessage.warning('还没有添加工作表操作')
     return
@@ -266,21 +333,57 @@ async function submitSheet(): Promise<void> {
   }
   submitting.value = true
   try {
-    const version = await xlsxApi.editSheets(props.fileId, props.versionNo, {
+    const version = await xlsxApi.editSheets(fileId, versionNo, {
       operations: sheetOps.value,
     })
+    if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved(['sheetOps'])
     emit('edited', version)
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '工作表编辑失败'
   } finally {
-    submitting.value = false
+    if (isCurrent()) submitting.value = false
   }
 }
+watch(
+  () => [props.modelValue, props.fileId, props.versionNo] as const,
+  ([visible]) => {
+    structure.value = null
+    loading.value = false
+    submitting.value = false
+    if (!visible) return
+    tab.value = 'browse'
+    ops.value = []
+    structOps.value = []
+    sheetOps.value = []
+    sheetName.value = ''
+    error.value = ''
+    dataOp.value = { type: 'SORT_RANGE', sheetName: '', range: 'A1:C10' }
+    formatOp.value = { sheetName: '', range: 'A1:C10' }
+    imageOp.value = { sheetName: '', cell: 'A1', imageFileId: 0, imageVersionNo: 1, widthPixels: 200, heightPixels: 200 }
+    rangeResult.value = null
+    formulaResult.value = null
+    rangeText.value = 'A1:C10'
+    void load()
+  },
+  { immediate: true, flush: 'sync' },
+)
+
+
+const editorDraft = useEditorDraft({
+  busy: () => submitting.value,
+  name: 'XlsxEditor', context: () => `${props.fileId}:${props.versionNo}`,
+  enabled: () => props.modelValue && !loading.value,
+  read: () => ({ ops: ops.value, structOps: structOps.value, sheetOps: sheetOps.value, dataOp: dataOp.value, formatOp: formatOp.value, imageOp: imageOp.value }), apply: value => { ops.value = value.ops; structOps.value = value.structOps; sheetOps.value = value.sheetOps; dataOp.value = value.dataOp; formatOp.value = value.formatOp; imageOp.value = value.imageOp },
+})
 </script>
 
 <template>
-  <div class="xe">
+  <div class="xe" :inert="submitting">
+      <DraftNotice :draft="editorDraft" />
     <p v-if="error" class="xe__hint xe__hint--warn" role="alert">{{ error }}</p>
     <p v-if="loading" class="xe__hint">结构加载中…</p>
 
@@ -473,14 +576,13 @@ async function submitSheet(): Promise<void> {
           <el-button size="small" :loading="submitting" @click="submitMisc('format')">提交</el-button>
         </div>
 
-        <p class="xe__hint"><strong>内嵌图片</strong>（图片须来自已有文件的明确版本；宽高 1～10000 像素）</p>
+        <p class="xe__hint"><strong>内嵌图片</strong>（支持选择或上传 PNG/JPEG 图片；宽高 1～10000 像素）</p>
         <div class="xe__row">
           <el-select v-model="imageOp.sheetName" class="xe__sheet" filterable placeholder="工作表">
             <el-option v-for="s in sheets" :key="s.name" :label="s.name" :value="s.name" />
           </el-select>
           <el-input v-model="imageOp.cell" placeholder="锚点 A1" class="xe__cell" />
-          <el-input-number v-model="imageOp.imageFileId" :min="1" placeholder="图片 fileId" />
-          <el-input-number v-model="imageOp.imageVersionNo" :min="1" placeholder="版本" />
+          <ImageAssetPicker :file-id="imageOp.imageFileId" :version-no="imageOp.imageVersionNo" @select="value => { imageOp.imageFileId = value.fileId; imageOp.imageVersionNo = value.versionNo }" />
           <el-input-number v-model="imageOp.widthPixels" :min="1" :max="10000" placeholder="宽" />
           <el-input-number v-model="imageOp.heightPixels" :min="1" :max="10000" placeholder="高" />
           <el-button size="small" :loading="submitting" @click="submitMisc('image')">提交</el-button>

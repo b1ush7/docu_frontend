@@ -112,7 +112,7 @@ export function usePreviewFlow(hooks: UsePreviewFlowHooks) {
    * 流式若在服务端已保存回复后才断开，回退的同步请求会被后端识别为同一意图，
    * 直接返回已有回复而不是再调一次模型。
    */
-  async function requestReply(sid: number, body: AiReplyRequest): Promise<AiReply> {
+  async function requestReply(sid: number, body: AiReplyRequest, request: number): Promise<AiReply> {
     streamText.value = ''
     const controller = new AbortController()
     streamController = controller
@@ -124,7 +124,7 @@ export function usePreviewFlow(hooks: UsePreviewFlowHooks) {
         sid,
         body,
         (event) => {
-          if (disposed) return
+          if (disposed || request !== revision || controller.signal.aborted) return
           if (event.event === 'delta') {
             buffered += event.text
             streamText.value = buffered
@@ -142,8 +142,8 @@ export function usePreviewFlow(hooks: UsePreviewFlowHooks) {
     } finally {
       streamController = null
     }
+    if (disposed || request !== revision || controller.signal.aborted) throw new ApiError(499, '已取消')
     if (completed) return completed
-    if (disposed) throw new ApiError(499, '已取消')
     // 流式没有给出 completed：可能是被截断或不可用，退回同步接口（同幂等键）
     return aiApi.generateReply(sid, body)
   }
@@ -184,15 +184,16 @@ export function usePreviewFlow(hooks: UsePreviewFlowHooks) {
       sessionId = retryIntent.sessionId
       const sid = retryIntent.sessionId
       const body = retryIntent.body
-      const r = await requestReply(sid, body)
+      const r = await requestReply(sid, body, request)
       retryIntent = null
       await applyReply(r, fileId, request)
     } catch (error) {
+      if (disposed || request !== revision) return
       if (error instanceof ApiError && error.code >= 400 && error.code < 500) retryIntent = null
       structureError.value = error instanceof ApiError ? error.message : '生成修改计划失败'
       if (activeTask.value) activeTask.value = { ...activeTask.value, status: 'FAILED', progress: 0,
         currentStep: '生成失败', errorMessage: structureError.value }
-    } finally { submitting.value = false }
+    } finally { if (!disposed && request === revision) submitting.value = false }
   }
   async function pollOnce(): Promise<void> {
     if (!reply.value || sessionId === null || disposed) return
@@ -244,6 +245,9 @@ export function usePreviewFlow(hooks: UsePreviewFlowHooks) {
 
   function clearContext(): void {
     revision++
+    streamController?.abort()
+    streamController = null
+    streamText.value = ''
     stopPolling()
     reply.value = null
     activeTask.value = null

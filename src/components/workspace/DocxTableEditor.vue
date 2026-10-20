@@ -1,4 +1,20 @@
 <script setup lang="ts">
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-button.css'
+import 'element-plus/theme-chalk/el-checkbox.css'
+import 'element-plus/theme-chalk/el-overlay.css'
+import 'element-plus/theme-chalk/el-dialog.css'
+import 'element-plus/theme-chalk/el-input.css'
+import 'element-plus/theme-chalk/el-input-number.css'
+import 'element-plus/theme-chalk/el-option.css'
+import 'element-plus/theme-chalk/el-scrollbar.css'
+import 'element-plus/theme-chalk/el-popper.css'
+import 'element-plus/theme-chalk/el-tag.css'
+import 'element-plus/theme-chalk/el-option-group.css'
+import 'element-plus/theme-chalk/el-select.css'
+
+import { ElButton, ElCheckbox, ElDialog, ElInput, ElInputNumber, ElOption, ElSelect } from 'element-plus'
+
 /**
  * @component DocxTableEditor
  * @description DOCX 表格人工编辑（API.md 4.6）。
@@ -21,6 +37,9 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { docxApi } from '@/api/docx'
+import DraftNotice from './DraftNotice.vue'
+import { useEditorDraft } from '@/composables/useEditorDraft'
+import { useRequestGuard } from '@/composables/useRequestGuard'
 import { ApiError } from '@/api/http'
 import type { DocBlock, DocxStructure, DocxTableEditOperation, Version } from '@/api/types'
 
@@ -29,6 +48,8 @@ const props = defineProps<{
   fileId: number | null
   versionNo: number | null
 }>()
+
+const requestGuard = useRequestGuard(() => [props.modelValue, props.fileId, props.versionNo])
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
@@ -86,28 +107,38 @@ function close(): void {
 }
 
 async function loadStructure(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  const isCurrent = requestGuard('loadStructure')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   loading.value = true
   error.value = ''
   try {
-    structure.value = await docxApi.getStructure(props.fileId, props.versionNo)
+    const structureResponse = await docxApi.getStructure(fileId, versionNo)
+    if (!isCurrent()) return
+    structure.value = structureResponse
     tableId.value = structure.value.blocks.find((b) => b.type === 'TABLE')?.blockId ?? ''
     operations.value = []
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '结构加载失败'
   } finally {
-    loading.value = false
+    if (isCurrent()) loading.value = false
   }
 }
 
 watch(
   () => [props.modelValue, props.fileId, props.versionNo] as const,
   ([visible]) => {
+    submitting.value = false
+    loading.value = false
     if (!visible) return
     structure.value = null
     operations.value = []
     void loadStructure()
   },
+  { flush: 'sync' },
 )
 
 /** 新增一个操作：按类型给出合理默认值 */
@@ -170,7 +201,12 @@ function validate(): string | null {
 }
 
 async function submit(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  if (submitting.value) return
+  const isCurrent = requestGuard('submit')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   const invalid = validate()
   if (invalid) {
     ElMessage.warning(invalid)
@@ -178,16 +214,20 @@ async function submit(): Promise<void> {
   }
   submitting.value = true
   try {
-    const version = await docxApi.editTable(props.fileId, props.versionNo, {
+    const version = await docxApi.editTable(fileId, versionNo, {
       operations: operations.value,
     })
+    if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved()
     emit('edited', version)
     close()
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '提交失败'
   } finally {
-    submitting.value = false
+    if (isCurrent()) submitting.value = false
   }
 }
 
@@ -199,18 +239,35 @@ function cellText(cell: DocBlock): string {
     .join(' ')
     .trim()
 }
+
+const editorDraft = useEditorDraft({
+  busy: () => submitting.value,
+  name: 'DocxTableEditor', context: () => `${props.fileId}:${props.versionNo}`,
+  enabled: () => props.modelValue && !loading.value,
+  read: () => ({ operations: operations.value }), apply: value => { operations.value = value.operations },
+})
+async function requestClose(): Promise<void> {
+  if (submitting.value || !(await editorDraft.confirmClose())) return
+  emit('update:modelValue', false)
+}
+function beforeClose(done: () => void): void {
+  if (!submitting.value) void editorDraft.confirmClose().then(allowed => { if (allowed) done() })
+}
 </script>
 
 <template>
   <el-dialog
+    :before-close="beforeClose"
+    :close-on-press-escape="!submitting"
     append-to-body
     :model-value="modelValue"
     title="DOCX 表格编辑"
     width="860px"
     :close-on-click-modal="false"
-    @update:model-value="emit('update:modelValue', $event)"
+    @update:model-value="value => value ? emit('update:modelValue', true) : requestClose()"
   >
-    <div class="te">
+    <div class="te" :inert="submitting">
+      <DraftNotice :draft="editorDraft" />
       <p class="te__hint">
         白名单在<strong>操作列表</strong>里逐条添加，最后一次性提交 —— 整批<strong>只创建一个新版本</strong>。
         单元格操作选 <code>CELL</code>，行操作选 <code>ROW</code>。
@@ -296,7 +353,7 @@ function cellText(cell: DocBlock): string {
           <div class="te__actions">
             <el-button size="small" @click="addOperation">添加操作</el-button>
             <span class="te__spacer" />
-            <el-button size="small" @click="close">取消</el-button>
+            <el-button size="small" @click="requestClose">取消</el-button>
             <el-button type="primary" size="small" :loading="submitting" :disabled="!operations.length" @click="submit">
               提交 {{ operations.length }} 个操作
             </el-button>

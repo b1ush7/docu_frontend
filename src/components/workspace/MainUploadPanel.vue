@@ -8,13 +8,17 @@
  *              上传成功与指令提交均通过事件抛给父组件，
  *              文件列表刷新与 AI_EDIT 任务创建、轮询由 workspace store 接入后统一处理。
  */
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
+import DraftNotice from './DraftNotice.vue'
+import { useEditorDraft } from '@/composables/useEditorDraft'
 import { useFileUpload } from '@/composables/useFileUpload'
 import type { FileAsset } from '@/api/types'
 
 /** 组件入参 */
-defineProps<{
+const props = defineProps<{
   /** 是否已具备可编辑文件：未上传且未选中文件时禁用"生成文稿" */
+  active?: boolean
+  fileId?: number | null
   hasFile?: boolean
   fileName?: string
   busy?: boolean
@@ -67,10 +71,17 @@ function clearInstructionError(): void {
     instructionError.value = ''
   }
 }
+watch(() => props.fileId, () => { instruction.value = ''; instructionError.value = '' }, { flush: 'sync' })
+const editorDraft = useEditorDraft({
+  busy: () => uploading.value || !!props.busy,
+  name: 'instruction', context: () => String(props.fileId ?? 'new'), enabled: () => props.active !== false,
+  read: () => ({ instruction: instruction.value }), apply: value => { instruction.value = value.instruction },
+})
 </script>
 
 <template>
   <div class="upload-panel">
+    <DraftNotice :draft="editorDraft" />
     <!-- 上传入口：居中大按钮，线稿风格上传图标 -->
     <button
       class="upload-panel__upload-btn"

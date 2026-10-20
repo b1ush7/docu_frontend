@@ -1,4 +1,25 @@
 <script setup lang="ts">
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-button.css'
+import 'element-plus/theme-chalk/el-checkbox.css'
+import 'element-plus/theme-chalk/el-overlay.css'
+import 'element-plus/theme-chalk/el-dialog.css'
+import 'element-plus/theme-chalk/el-input.css'
+import 'element-plus/theme-chalk/el-input-number.css'
+import 'element-plus/theme-chalk/el-option.css'
+import 'element-plus/theme-chalk/el-scrollbar.css'
+import 'element-plus/theme-chalk/el-popper.css'
+import 'element-plus/theme-chalk/el-tag.css'
+import 'element-plus/theme-chalk/el-option-group.css'
+import 'element-plus/theme-chalk/el-select.css'
+import 'element-plus/theme-chalk/el-tab-pane.css'
+import 'element-plus/theme-chalk/el-tooltip.css'
+import 'element-plus/theme-chalk/el-table.css'
+import 'element-plus/theme-chalk/el-table-column.css'
+import 'element-plus/theme-chalk/el-tabs.css'
+
+import { ElButton, ElCheckbox, ElDialog, ElInput, ElInputNumber, ElOption, ElSelect, ElTabPane, ElTable, ElTableColumn, ElTabs } from 'element-plus'
+
 /**
  * @component DocxTocImageEditor
  * @description DOCX 目录域（API.md 4.11）与内嵌图片（4.8）编辑。
@@ -10,13 +31,17 @@
  *   - 目录域是**域代码**，实际页码要等 Word 打开时更新（`updateFieldsOnOpen`）。
  *
  * 内嵌图片语义：
- *   - 图片必须来自**已有文件的明确版本**（imageFileId + imageVersionNo），不能直接上传。
+ *   - 图片选择器支持上传或选择已有文件的明确版本（imageFileId + imageVersionNo）。
  *   - 目标 `blockId` 必须是正文或表格单元格中的段落。
  *   - 宽高 1～10000 像素；单次最多 20 张，整批只创建一个版本。
  */
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { docxApi } from '@/api/docx'
+import DraftNotice from './DraftNotice.vue'
+import ImageAssetPicker from './ImageAssetPicker.vue'
+import { useEditorDraft } from '@/composables/useEditorDraft'
+import { useRequestGuard } from '@/composables/useRequestGuard'
 import { ApiError } from '@/api/http'
 import type {
   DocBlock,
@@ -35,6 +60,8 @@ const props = defineProps<{
   fileId: number | null
   versionNo: number | null
 }>()
+
+const requestGuard = useRequestGuard(() => [props.modelValue, props.fileId, props.versionNo])
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
@@ -85,27 +112,43 @@ function close(): void {
 
 /** 加载结构与目录状态 */
 async function load(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  const isCurrent = requestGuard('load')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   loading.value = true
   error.value = ''
   toc.value = null
+  hfLinks.value = null
+  footnotes.value = null
   structure.value = null
   try {
-    structure.value = await docxApi.getStructure(props.fileId, props.versionNo)
-    toc.value = await docxApi.getTableOfContents(props.fileId, props.versionNo)
+    const structureResponse = await docxApi.getStructure(fileId, versionNo)
+    if (!isCurrent()) return
+    structure.value = structureResponse
+    const tocResponse = await docxApi.getTableOfContents(fileId, versionNo)
+    if (!isCurrent()) return
+    toc.value = tocResponse
     // 页眉页脚与脚注都是只读查询，失败不应阻断整个对话框
-    hfLinks.value = await docxApi.getHeaderFooterLinks(props.fileId, props.versionNo).catch(() => null)
-    footnotes.value = await docxApi.getFootnotes(props.fileId, props.versionNo).catch(() => null)
+    const hfLinksResponse = await docxApi.getHeaderFooterLinks(fileId, versionNo).catch(() => null)
+    if (!isCurrent()) return
+    hfLinks.value = hfLinksResponse
+    const footnotesResponse = await docxApi.getFootnotes(fileId, versionNo).catch(() => null)
+    if (!isCurrent()) return
+    footnotes.value = footnotesResponse
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '加载失败'
   } finally {
-    loading.value = false
+    if (isCurrent()) loading.value = false
   }
 }
 
 watch(
   () => [props.modelValue, props.fileId, props.versionNo] as const,
   ([visible]) => {
+    submitting.value = false
     if (!visible) return
     tab.value = 'toc'
     tocPosition.value = 'END'
@@ -113,28 +156,40 @@ watch(
     tocHyperlinks.value = true
     tocTitle.value = '目录'
     images.value = []
+    hfSectionNo.value = 1; hfLocation.value = 'HEADER'; hfType.value = 'DEFAULT'; hfLinked.value = true; hfText.value = ''
+    fnType.value = 'ADD'; fnTargetBlockId.value = ''; fnId.value = null; fnText.value = ''
     void load()
   },
+  { flush: 'sync' },
 )
 
 /** 插入或刷新目录域 */
 async function submitToc(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  if (submitting.value) return
+  const isCurrent = requestGuard('submitToc')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   submitting.value = true
   try {
-    const version = await docxApi.createTableOfContents(props.fileId, props.versionNo, {
+    const version = await docxApi.createTableOfContents(fileId, versionNo, {
       position: tocPosition.value,
       maxLevel: tocMaxLevel.value,
       hyperlinks: tocHyperlinks.value,
       title: tocTitle.value.trim() || undefined,
     })
+    if (!isCurrent()) return
     ElMessage.success('已创建新版本（目录页码需在 Word 中更新）')
+    submitting.value = false
+    editorDraft.saved(['tocPosition', 'tocMaxLevel', 'tocHyperlinks', 'tocTitle'])
     emit('edited', version)
     close()
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '目录操作失败'
   } finally {
-    submitting.value = false
+    if (isCurrent()) submitting.value = false
   }
 }
 
@@ -159,7 +214,12 @@ function removeImage(index: number): void {
 
 /** 提交图片插入 */
 async function submitImages(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  if (submitting.value) return
+  const isCurrent = requestGuard('submitImages')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   if (!images.value.length) {
     ElMessage.warning('还没有添加图片')
     return
@@ -173,22 +233,31 @@ async function submitImages(): Promise<void> {
   }
   submitting.value = true
   try {
-    const version = await docxApi.insertInlineImages(props.fileId, props.versionNo, {
+    const version = await docxApi.insertInlineImages(fileId, versionNo, {
       operations: images.value,
     })
+    if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved(['images'])
     emit('edited', version)
     close()
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '插入图片失败'
   } finally {
-    submitting.value = false
+    if (isCurrent()) submitting.value = false
   }
 }
 
 /** 提交页眉页脚链接设置 */
 async function submitHf(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  if (submitting.value) return
+  const isCurrent = requestGuard('submitHf')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   // 取消链接时后端要求给 text；重新链接时必须不传
   if (!hfLinked.value && !hfText.value.trim()) {
     ElMessage.warning('取消链接需要填写页眉页脚文本')
@@ -196,26 +265,35 @@ async function submitHf(): Promise<void> {
   }
   submitting.value = true
   try {
-    const version = await docxApi.updateHeaderFooterLink(props.fileId, props.versionNo, {
+    const version = await docxApi.updateHeaderFooterLink(fileId, versionNo, {
       sectionNo: hfSectionNo.value,
       location: hfLocation.value,
       type: hfType.value,
       linkedToPrevious: hfLinked.value,
       text: hfLinked.value ? undefined : hfText.value,
     })
+    if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved(['hfSectionNo', 'hfLocation', 'hfType', 'hfLinked', 'hfText'])
     emit('edited', version)
     close()
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '页眉页脚设置失败'
   } finally {
-    submitting.value = false
+    if (isCurrent()) submitting.value = false
   }
 }
 
 /** 提交脚注操作 */
 async function submitFootnote(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  if (submitting.value) return
+  const isCurrent = requestGuard('submitFootnote')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   const op: DocxFootnoteEditOperation = { type: fnType.value }
   if (fnType.value === 'ADD') {
     if (!fnTargetBlockId.value) {
@@ -244,14 +322,18 @@ async function submitFootnote(): Promise<void> {
   }
   submitting.value = true
   try {
-    const version = await docxApi.editFootnotes(props.fileId, props.versionNo, { operations: [op] })
+    const version = await docxApi.editFootnotes(fileId, versionNo, { operations: [op] })
+    if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved(['fnType', 'fnTargetBlockId', 'fnId', 'fnText'])
     emit('edited', version)
     close()
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '脚注操作失败'
   } finally {
-    submitting.value = false
+    if (isCurrent()) submitting.value = false
   }
 }
 
@@ -261,18 +343,35 @@ function preview(block: DocBlock): string {
   if (!text) return '（空段落）'
   return text.length > 30 ? `${text.slice(0, 30)}…` : text
 }
+
+const editorDraft = useEditorDraft({
+  busy: () => submitting.value,
+  name: 'DocxTocImageEditor', context: () => `${props.fileId}:${props.versionNo}`,
+  enabled: () => props.modelValue && !loading.value,
+  read: () => ({ tocPosition: tocPosition.value, tocMaxLevel: tocMaxLevel.value, tocHyperlinks: tocHyperlinks.value, tocTitle: tocTitle.value, images: images.value, hfSectionNo: hfSectionNo.value, hfLocation: hfLocation.value, hfType: hfType.value, hfLinked: hfLinked.value, hfText: hfText.value, fnType: fnType.value, fnTargetBlockId: fnTargetBlockId.value, fnId: fnId.value, fnText: fnText.value }), apply: value => { tocPosition.value = value.tocPosition; tocMaxLevel.value = value.tocMaxLevel; tocHyperlinks.value = value.tocHyperlinks; tocTitle.value = value.tocTitle; images.value = value.images; hfSectionNo.value = value.hfSectionNo; hfLocation.value = value.hfLocation; hfType.value = value.hfType; hfLinked.value = value.hfLinked; hfText.value = value.hfText; fnType.value = value.fnType; fnTargetBlockId.value = value.fnTargetBlockId; fnId.value = value.fnId; fnText.value = value.fnText },
+})
+async function requestClose(): Promise<void> {
+  if (submitting.value || !(await editorDraft.confirmClose())) return
+  emit('update:modelValue', false)
+}
+function beforeClose(done: () => void): void {
+  if (!submitting.value) void editorDraft.confirmClose().then(allowed => { if (allowed) done() })
+}
 </script>
 
 <template>
   <el-dialog
+    :before-close="beforeClose"
+    :close-on-press-escape="!submitting"
     append-to-body
     :model-value="modelValue"
     title="DOCX 目录与内嵌图片"
     width="780px"
     :close-on-click-modal="false"
-    @update:model-value="emit('update:modelValue', $event)"
+    @update:model-value="value => value ? emit('update:modelValue', true) : requestClose()"
   >
-    <div class="tie">
+    <div class="tie" :inert="submitting">
+      <DraftNotice :draft="editorDraft" />
       <p v-if="error" class="tie__hint tie__hint--warn" role="alert">{{ error }}</p>
       <p v-if="loading" class="tie__hint">加载中…</p>
 
@@ -314,7 +413,7 @@ function preview(block: DocBlock): string {
           </div>
 
           <div class="tie__actions">
-            <el-button size="small" @click="close">取消</el-button>
+            <el-button size="small" @click="requestClose">取消</el-button>
             <el-button type="primary" size="small" :loading="submitting" @click="submitToc">
               {{ toc?.present ? '刷新目录域' : '插入目录域' }}
             </el-button>
@@ -324,7 +423,7 @@ function preview(block: DocBlock): string {
         <!-- 内嵌图片 -->
         <el-tab-pane label="内嵌图片" name="image">
           <p class="tie__hint">
-            图片必须来自<strong>已有文件的明确版本</strong>（先上传图片拿到 fileId 与 versionNo），
+            选择或上传 PNG/JPEG 图片，并选定图片版本；
             目标段落必须是正文或单元格段落。宽高 1～10000 像素，单次最多 20 张。
           </p>
 
@@ -339,8 +438,7 @@ function preview(block: DocBlock): string {
                   :value="block.blockId"
                 />
               </el-select>
-              <el-input-number v-model="item.imageFileId" :min="1" placeholder="图片 fileId" />
-              <el-input-number v-model="item.imageVersionNo" :min="1" placeholder="版本" />
+              <ImageAssetPicker :file-id="item.imageFileId" :version-no="item.imageVersionNo" @select="value => { item.imageFileId = value.fileId; item.imageVersionNo = value.versionNo }" />
               <el-input-number v-model="item.widthPixels" :min="1" :max="10000" placeholder="宽" />
               <el-input-number v-model="item.heightPixels" :min="1" :max="10000" placeholder="高" />
               <el-button link type="danger" size="small" @click="removeImage(index)">移除</el-button>
@@ -350,7 +448,7 @@ function preview(block: DocBlock): string {
           <div class="tie__actions">
             <el-button size="small" @click="addImage">添加一张图片</el-button>
             <span class="tie__spacer" />
-            <el-button size="small" @click="close">取消</el-button>
+            <el-button size="small" @click="requestClose">取消</el-button>
             <el-button
               type="primary"
               size="small"
@@ -416,7 +514,7 @@ function preview(block: DocBlock): string {
           </div>
 
           <div class="tie__actions">
-            <el-button size="small" @click="close">取消</el-button>
+            <el-button size="small" @click="requestClose">取消</el-button>
             <el-button type="primary" size="small" :loading="submitting" @click="submitHf">提交设置</el-button>
           </div>
         </el-tab-pane>
@@ -466,7 +564,7 @@ function preview(block: DocBlock): string {
           </div>
 
           <div class="tie__actions">
-            <el-button size="small" @click="close">取消</el-button>
+            <el-button size="small" @click="requestClose">取消</el-button>
             <el-button type="primary" size="small" :loading="submitting" @click="submitFootnote">提交脚注操作</el-button>
           </div>
         </el-tab-pane>

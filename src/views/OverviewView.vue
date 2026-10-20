@@ -17,7 +17,7 @@
 
     <el-row v-else-if="data" :gutter="16">
       <!-- 用户 -->
-      <el-col :span="8">
+      <el-col :xs="24" :sm="12" :lg="8">
         <el-card shadow="hover" class="stat-card">
           <template #header><span class="card-title">用户</span></template>
           <div class="stat-grid">
@@ -42,7 +42,7 @@
       </el-col>
 
       <!-- 文件 -->
-      <el-col :span="8">
+      <el-col :xs="24" :sm="12" :lg="8">
         <el-card shadow="hover" class="stat-card">
           <template #header><span class="card-title">文件</span></template>
           <div class="stat-grid">
@@ -63,7 +63,7 @@
       </el-col>
 
       <!-- 任务 -->
-      <el-col :span="8">
+      <el-col :xs="24" :sm="12" :lg="8">
         <el-card shadow="hover" class="stat-card">
           <template #header><span class="card-title">任务</span></template>
           <div class="stat-grid">
@@ -100,11 +100,24 @@
         </el-card>
       </el-col>
     </el-row>
+    <StatisticsTrend />
   </div>
 </template>
 
 <script setup>
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-button.css'
+import 'element-plus/theme-chalk/el-card.css'
+import 'element-plus/theme-chalk/el-col.css'
+import 'element-plus/theme-chalk/el-result.css'
+import 'element-plus/theme-chalk/el-row.css'
+import 'element-plus/theme-chalk/el-skeleton-item.css'
+import 'element-plus/theme-chalk/el-skeleton.css'
+
+import { ElButton, ElCard, ElCol, ElResult, ElRow, ElSkeleton } from 'element-plus'
+
 import { ref } from 'vue'
+import StatisticsTrend from '@/components/admin/StatisticsTrend.vue'
 import { useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { getOverview } from '../api/admin'
