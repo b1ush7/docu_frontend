@@ -84,6 +84,8 @@ const sheetName = ref('')
 const rangeText = ref('A1:C10')
 const rangeResult = ref<XlsxRange | null>(null)
 const formulaResult = ref<XlsxFormulaResults | null>(null)
+const expandedSheets = ref<string[]>([])
+const recalculateFormulas = ref(true)
 
 /* ---------- 单元格编辑 ---------- */
 const ops = ref<XlsxCellEditOperation[]>([])
@@ -104,6 +106,7 @@ async function load(): Promise<void> {
     if (!isCurrent()) return
     structure.value = structureResponse
     sheetName.value = structure.value.sheets[0]?.name ?? ''
+    expandedSheets.value = structure.value.sheets.map(sheet => sheet.name)
   } catch (e) {
     if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '结构加载失败'
@@ -189,7 +192,10 @@ async function submit(): Promise<void> {
   }
   submitting.value = true
   try {
-    const version = await xlsxApi.editCells(fileId, versionNo, { operations: ops.value })
+    const version = await xlsxApi.editCells(fileId, versionNo, {
+      operations: ops.value,
+      recalculateFormulas: recalculateFormulas.value,
+    })
     if (!isCurrent()) return
     ElMessage.success('已创建新版本')
     submitting.value = false
@@ -394,8 +400,8 @@ const editorDraft = useEditorDraft({
           共 {{ structure.totalSheets }} 个工作表，{{ structure.includedCells }} 个单元格
           <template v-if="structure.truncated">（结果被截断）</template>
         </p>
-        <el-collapse>
-          <el-collapse-item v-for="sheet in sheets" :key="sheet.name" :title="`${sheet.name}（${sheet.cells.length} 个单元格）`">
+        <el-collapse v-model="expandedSheets">
+          <el-collapse-item v-for="sheet in sheets" :key="sheet.name" :name="sheet.name" :title="`${sheet.name}（${sheet.cells.length} 个单元格）`">
             <p v-if="sheet.mergedRegions.length" class="xe__hint">合并区域：{{ sheet.mergedRegions.join('，') }}</p>
             <el-table :data="sheet.cells" size="small" border max-height="300">
               <el-table-column prop="address" label="单元格" width="90" />
@@ -449,6 +455,7 @@ const editorDraft = useEditorDraft({
         <p class="xe__hint">
           整批操作<strong>只创建一个新版本</strong>；地址用 A1 记法（如 B2）。单次上限 500 条。
         </p>
+        <el-checkbox v-model="recalculateFormulas">保存时计算公式结果（不支持的公式可取消勾选后在 Excel 中重算）</el-checkbox>
         <div class="xe__list">
           <div v-for="(op, index) in ops" :key="index" class="xe__op">
             <el-select v-model="op.type" class="xe__op-type">
