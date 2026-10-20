@@ -42,9 +42,25 @@ let pageRequest = 0
 /** 总页数（pageCount 可能为 null） */
 const totalPages = computed(() => meta.value?.pageCount ?? (imageUrl.value ? 1 : 0))
 
+/**
+ * 已知总页数；null 表示「还不知道」。
+ *
+ * 来源优先级：
+ *   1. 元信息接口的 pageCount（PDF / 图片一定有；DOCX 恒为 null）
+ *   2. 页面图片响应头 `X-Total-Pages`（后端渲染 DOCX 时把 manifest.pageCount 带回来了）
+ *   3. 越界错误的文案「（该版本共 N 页）」——仅在旧版后端或响应头缺失时兜底
+ */
+const learnedPages = ref<number | null>(null)
+
+/** 确定的总页数；null = 尚未确定 */
+const knownPages = computed(() => meta.value?.pageCount ?? learnedPages.value ?? null)
+
 /** 是否可翻页 */
 const canPrev = computed(() => pageNo.value > 1)
-const canNext = computed(() => pageNo.value < totalPages.value)
+// 页数未知时允许尝试翻页：由后端越界错误来划定边界，否则 DOCX 永远停在第 1 页
+const canNext = computed(() =>
+  knownPages.value === null ? true : pageNo.value < knownPages.value,
+)
 
 /** 释放上一张图片的对象 URL，避免内存泄漏 */
 function revokeImage(): void {
@@ -63,18 +79,27 @@ async function loadPage(target: number): Promise<void> {
   pageLoading.value = true
   error.value = ''
   try {
-    const blob = await previewApi.getPageImage(fileId, versionNo, target)
+    const { blob, totalPages } = await previewApi.getPageImage(fileId, versionNo, target)
     if (revision !== generation || request !== pageRequest) return
     revokeImage()
     imageUrl.value = URL.createObjectURL(blob)
     pageNo.value = target
+    // 后端在 X-Total-Pages 头里给出了总页数：直接采用，无需再探测
+    if (totalPages !== null) learnedPages.value = totalPages
     if (meta.value?.pageCount == null) {
       const refreshed = await previewApi.getMeta(fileId, versionNo)
       if (revision === generation && request === pageRequest) meta.value = refreshed
     }
   } catch (e) {
-    // 503 通常表示服务端未接入渲染后端；422 表示这一页本身无法渲染
-    if (revision === generation && request === pageRequest) error.value = e instanceof ApiError ? e.message : '页面渲染失败'
+    // 503 表示服务端未接入渲染后端；越界返回 404
+    if (revision === generation && request === pageRequest) {
+      const message = e instanceof ApiError ? e.message : '页面渲染失败'
+      // 越界时后端会报「第 N 页不存在或无法渲染（该版本共 M 页）」。
+      // 这不是失败：记下真实页数即可（按钮随即变为禁用），当前页继续保留在屏幕上。
+      const matched = /共\s*(\d+)\s*页/.exec(message)
+      if (matched) learnedPages.value = Number(matched[1])
+      else error.value = message
+    }
   } finally {
     if (revision === generation && request === pageRequest) pageLoading.value = false
   }
@@ -89,6 +114,8 @@ async function loadMeta(): Promise<void> {
   loading.value = true
   error.value = ''
   meta.value = null
+  // 换了文件/版本，之前学到的页数不再适用
+  learnedPages.value = null
   revokeImage()
   try {
     const info = await previewApi.getMeta(props.fileId, props.versionNo)
@@ -177,7 +204,7 @@ onBeforeUnmount(() => {
           上一页
         </button>
         <span class="page-preview__pager-info">
-          第 {{ pageNo }} / {{ totalPages }} 页 · {{ meta.dpi }} DPI · {{ meta.engine || 'native' }}
+          第 {{ pageNo }} / {{ knownPages ?? '?' }} 页 · {{ meta.dpi }} DPI · {{ meta.engine || 'native' }}
         </span>
         <button
           class="page-preview__pager-btn"

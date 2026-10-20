@@ -23,7 +23,8 @@ const js = ts.transpileModule(endpointText, { compilerOptions: { module: ts.Modu
 const { API_ENDPOINTS } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`)
 const calls = []
 const unresolved = []
-const methodNames = { getData: 'GET', getBlob: 'GET', postData: 'POST', putData: 'PUT', deleteData: 'DELETE' }
+// getBlobWithHeaders 与 getBlob 同为二进制 GET，只是额外把响应头返回给调用方
+const methodNames = { getData: 'GET', getBlob: 'GET', getBlobWithHeaders: 'GET', postData: 'POST', putData: 'PUT', deleteData: 'DELETE' }
 for (const file of fs.readdirSync('src/api').filter(name => /\.[jt]s$/.test(name) && !['mock.ts', 'http.ts', 'endpoints.ts', 'types.ts'].includes(name))) {
   const source = ts.createSourceFile(file, fs.readFileSync(path.join('src/api', file), 'utf8'), ts.ScriptTarget.Latest, true)
   const variables = new Map()

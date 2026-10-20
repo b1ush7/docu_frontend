@@ -147,4 +147,18 @@ export async function deleteData<T = null>(url: string, config?: AxiosRequestCon
 export async function getBlob(url: string, config?: AxiosRequestConfig): Promise<Blob> {
   return (await http.get<Blob>(url, { ...config, responseType: 'blob' })).data
 }
+
+/**
+ * 读取二进制响应，同时把响应头交给调用方。
+ *
+ * <p>用于需要随二进制一起读取元信息的场景：页面预览会在 `X-Total-Pages` 头里返回本版本总页数
+ * （DOCX / XLSX 的页数只有渲染时才知道，元信息接口给不了）。
+ */
+export async function getBlobWithHeaders(
+  url: string,
+  config?: AxiosRequestConfig,
+): Promise<{ blob: Blob; headers: Record<string, unknown> }> {
+  const response = await http.get<Blob>(url, { ...config, responseType: 'blob' })
+  return { blob: response.data, headers: response.headers as unknown as Record<string, unknown> }
+}
 export default httpLegacy

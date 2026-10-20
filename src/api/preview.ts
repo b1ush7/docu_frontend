@@ -10,7 +10,7 @@
  */
 
 import { API_ENDPOINTS } from './endpoints'
-import { getBlob, getData, postData } from './http'
+import { getBlob, getBlobWithHeaders, getData, postData } from './http'
 import type {
   CompatibilityReport,
   VersionCompareResult,
@@ -34,13 +34,22 @@ export const previewApi = {
    * @param versionNo 版本号
    * @param pageNo 页码，从 1 开始
    * @param dpi 渲染 DPI，默认由后端决定（110），允许 60～200
-   * @returns PNG 字节流
+   * @returns PNG 字节流，以及后端在 `X-Total-Pages` 头里给出的本版本总页数（未知时不带该头）
    */
-  getPageImage(fileId: number, versionNo: number, pageNo: number, dpi?: number): Promise<Blob> {
+  async getPageImage(
+    fileId: number,
+    versionNo: number,
+    pageNo: number,
+    dpi?: number,
+  ): Promise<{ blob: Blob; totalPages: number | null }> {
     const base = API_ENDPOINTS.file.pagePreview(fileId, versionNo, pageNo)
     // dpi 为可选查询参数，不传时由后端使用默认值
     const url = dpi === undefined ? base : `${base}?dpi=${dpi}`
-    return getBlob(url, { timeout: 120000 })
+    const { blob, headers } = await getBlobWithHeaders(url, { timeout: 120000 })
+    // DOCX / XLSX 的页数只有渲染后才由后端报出；取不到就当未知
+    const raw = headers['x-total-pages']
+    const parsed = typeof raw === 'string' ? Number(raw) : Number.NaN
+    return { blob, totalPages: Number.isFinite(parsed) && parsed > 0 ? parsed : null }
   },
 
   /**
