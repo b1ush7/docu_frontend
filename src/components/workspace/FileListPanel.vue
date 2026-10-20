@@ -10,6 +10,8 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { fileApi } from '@/api/file'
+import { confirmLeaveDrafts } from '@/composables/useEditorDraft'
+import { useRequestGuard } from '@/composables/useRequestGuard'
 import { ApiError } from '@/api/http'
 import { formatTime } from '@/utils/format'
 import type { FileAsset } from '@/api/types'
@@ -60,24 +62,30 @@ const hasMore = computed(() => files.value.length < total.value)
  * 拉取文件列表
  * @param mode reset 首屏 / 刷新：覆盖列表；append 加载更多：追加到现有列表尾部
  */
+const listGuard = useRequestGuard(() => props.keyword)
 async function fetchFiles(mode: 'reset' | 'append' = 'reset'): Promise<void> {
+  if (mode === 'append' && loading.value) return
+  const current = listGuard()
+  const nextPage = mode === 'reset' ? 1 : page.value + 1
   loading.value = true
   listError.value = ''
   try {
     // 接口默认返回当前用户、状态 READY 的文件，按创建时间倒序；keyword 为展示名模糊搜索
     const result = await fileApi.list({
-      page: page.value,
+      page: nextPage,
       size: PAGE_SIZE,
       // 空白关键字不传参，避免后端按空串过滤
       keyword: props.keyword?.trim() || undefined,
     })
+    if (!current()) return
+    page.value = nextPage
     // reset 覆盖、append 拼接，加载更多时不打断滚动位置
     files.value = mode === 'reset' ? result.records : [...files.value, ...result.records]
     total.value = result.total
   } catch (e) {
-    listError.value = e instanceof ApiError ? e.message : '文件列表加载失败'
+    if (current()) listError.value = e instanceof ApiError ? e.message : '文件列表加载失败'
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
 }
 
@@ -90,16 +98,18 @@ onMounted(() => {
 watch(
   () => props.keyword,
   () => {
+    files.value = []
+    total.value = 0
     page.value = 1
     void fetchFiles('reset')
   },
+  { flush: 'sync' },
 )
 
 /**
  * 加载下一页并追加到列表
  */
 async function loadMore(): Promise<void> {
-  page.value += 1
   await fetchFiles('append')
 }
 
@@ -228,6 +238,7 @@ function onDeleteClick(file: FileAsset): void {
  * @param file 目标文件
  */
 async function removeFile(file: FileAsset): Promise<void> {
+  if (!(await confirmLeaveDrafts())) return
   try {
     // DELETE /file/{id}：软删除，历史记录与磁盘内容保留；重复删除返回成功
     await fileApi.remove(file.id)

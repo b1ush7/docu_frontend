@@ -15,6 +15,8 @@ import { taskStatusLabel } from '@/constants/task'
 import PagePreview from './PagePreview.vue'
 import CompatCheck from './CompatCheck.vue'
 import XlsxEditor from './XlsxEditor.vue'
+import PdfContentPanel from './PdfContentPanel.vue'
+import { confirmLeaveDrafts } from '@/composables/useEditorDraft'
 import { previewApi } from '@/api/preview'
 import { ApiError } from '@/api/http'
 import type {
@@ -29,7 +31,9 @@ import type {
 } from '@/api/types'
 
 /** 组件入参 */
-const props = defineProps<{  /** 生成当前预览的任务记录；null 表示无任务上下文 */
+const props = defineProps<{
+  active?: boolean
+  /** 生成当前预览的任务记录；null 表示无任务上下文 */
   task: Task | null
   /** 待确认的内容差异：仅在 planStatus=PENDING 时有值 */
   changes: AiChange[]
@@ -100,7 +104,7 @@ const currentVersion = computed(() => props.previewVersion ?? props.structure)
  *   - diff      与上一版本的块级差异（仅 versionNo > 1 可用）
  * 默认版面预览；服务端未启用渲染时 PagePreview 会自行降级提示，用户可切回结构预览。
  */
-const viewMode = ref<'page' | 'structure' | 'diff' | 'compat' | 'xlsx'>('page')
+const viewMode = ref<'page' | 'structure' | 'diff' | 'compat' | 'xlsx' | 'pdf'>('page')
 
 /** 版本比较结果（仅在切到 diff 时加载） */
 const compareResult = ref<VersionCompareResult | null>(null)
@@ -145,7 +149,8 @@ async function loadCompare(): Promise<void> {
 }
 
 /** 切换到某个预览方式，必要时懒加载对应数据 */
-function switchView(next: 'page' | 'structure' | 'diff' | 'compat' | 'xlsx'): void {
+async function switchView(next: 'page' | 'structure' | 'diff' | 'compat' | 'xlsx' | 'pdf'): Promise<void> {
+  if (next === viewMode.value || !(await confirmLeaveDrafts())) return
   viewMode.value = next
   if (next === 'diff' && compareResult.value === null && !compareLoading.value) {
     void loadCompare()
@@ -190,6 +195,7 @@ function compareTypeLabel(type: string): string {
         >
           版面预览
         </button>
+        <button v-if="previewVersion?.extension === 'pdf'" class="preview-panel__tab" :class="{ 'preview-panel__tab--active': viewMode === 'pdf' }" type="button" role="tab" :aria-selected="viewMode === 'pdf'" @click="switchView('pdf')">文字与页面分类 / 转 DOCX</button>
         <button
           v-if="structure"
           class="preview-panel__tab"
@@ -339,10 +345,16 @@ function compareTypeLabel(type: string): string {
     />
 
     <!-- XLSX 结构与单元格编辑 -->
+    <PdfContentPanel
+      v-else-if="currentVersion && viewMode === 'pdf'"
+      :file-id="currentVersion.fileId"
+      :version-no="currentVersion.versionNo"
+      @edited="(version: Version) => props.onXlsxEdited?.(version)"
+    />
     <XlsxEditor
       v-else-if="currentVersion && viewMode === 'xlsx'"
       :key="`${currentVersion.fileId}-${currentVersion.versionNo}`"
-      :model-value="true"
+      :model-value="active !== false"
       :file-id="currentVersion.fileId"
       :version-no="currentVersion.versionNo"
       @edited="(v: Version) => props.onXlsxEdited?.(v)"

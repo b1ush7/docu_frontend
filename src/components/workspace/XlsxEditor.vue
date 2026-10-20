@@ -20,6 +20,9 @@ import 'element-plus/theme-chalk/el-tabs.css'
 
 import { ElButton, ElCheckbox, ElCollapse, ElCollapseItem, ElInput, ElInputNumber, ElOption, ElSelect, ElTabPane, ElTable, ElTableColumn, ElTabs } from 'element-plus'
 
+import DraftNotice from './DraftNotice.vue'
+import ImageAssetPicker from './ImageAssetPicker.vue'
+import { useEditorDraft } from '@/composables/useEditorDraft'
 import { useRequestGuard } from '@/composables/useRequestGuard'
 
 /**
@@ -189,6 +192,8 @@ async function submit(): Promise<void> {
     const version = await xlsxApi.editCells(fileId, versionNo, { operations: ops.value })
     if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved(['ops'])
     emit('edited', version)
   } catch (e) {
     if (!isCurrent()) return
@@ -235,7 +240,7 @@ async function submitMisc(kind: 'data' | 'format' | 'image'): Promise<void> {
     run = xlsxApi.formatCells(fileId, versionNo, { operations: [formatOp.value] })
   } else {
     if (!imageOp.value.sheetName || !imageOp.value.cell || !imageOp.value.imageFileId) {
-      ElMessage.warning('内嵌图片需要工作表、单元格与图片文件 ID')
+      ElMessage.warning('内嵌图片需要工作表、单元格与已选图片')
       return
     }
     run = xlsxApi.insertImages(fileId, versionNo, { operations: [imageOp.value] })
@@ -246,6 +251,8 @@ async function submitMisc(kind: 'data' | 'format' | 'image'): Promise<void> {
     const version = await run
     if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved([kind === 'data' ? 'dataOp' : kind === 'format' ? 'formatOp' : 'imageOp'])
     emit('edited', version)
   } catch (e) {
     if (!isCurrent()) return
@@ -284,6 +291,8 @@ async function submitStruct(): Promise<void> {
     })
     if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved(['structOps'])
     emit('edited', version)
   } catch (e) {
     if (!isCurrent()) return
@@ -329,6 +338,8 @@ async function submitSheet(): Promise<void> {
     })
     if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved(['sheetOps'])
     emit('edited', version)
   } catch (e) {
     if (!isCurrent()) return
@@ -361,10 +372,18 @@ watch(
   { immediate: true, flush: 'sync' },
 )
 
+
+const editorDraft = useEditorDraft({
+  busy: () => submitting.value,
+  name: 'XlsxEditor', context: () => `${props.fileId}:${props.versionNo}`,
+  enabled: () => props.modelValue && !loading.value,
+  read: () => ({ ops: ops.value, structOps: structOps.value, sheetOps: sheetOps.value, dataOp: dataOp.value, formatOp: formatOp.value, imageOp: imageOp.value }), apply: value => { ops.value = value.ops; structOps.value = value.structOps; sheetOps.value = value.sheetOps; dataOp.value = value.dataOp; formatOp.value = value.formatOp; imageOp.value = value.imageOp },
+})
 </script>
 
 <template>
-  <div class="xe">
+  <div class="xe" :inert="submitting">
+      <DraftNotice :draft="editorDraft" />
     <p v-if="error" class="xe__hint xe__hint--warn" role="alert">{{ error }}</p>
     <p v-if="loading" class="xe__hint">结构加载中…</p>
 
@@ -557,14 +576,13 @@ watch(
           <el-button size="small" :loading="submitting" @click="submitMisc('format')">提交</el-button>
         </div>
 
-        <p class="xe__hint"><strong>内嵌图片</strong>（图片须来自已有文件的明确版本；宽高 1～10000 像素）</p>
+        <p class="xe__hint"><strong>内嵌图片</strong>（支持选择或上传 PNG/JPEG 图片；宽高 1～10000 像素）</p>
         <div class="xe__row">
           <el-select v-model="imageOp.sheetName" class="xe__sheet" filterable placeholder="工作表">
             <el-option v-for="s in sheets" :key="s.name" :label="s.name" :value="s.name" />
           </el-select>
           <el-input v-model="imageOp.cell" placeholder="锚点 A1" class="xe__cell" />
-          <el-input-number v-model="imageOp.imageFileId" :min="1" placeholder="图片 fileId" />
-          <el-input-number v-model="imageOp.imageVersionNo" :min="1" placeholder="版本" />
+          <ImageAssetPicker :file-id="imageOp.imageFileId" :version-no="imageOp.imageVersionNo" @select="value => { imageOp.imageFileId = value.fileId; imageOp.imageVersionNo = value.versionNo }" />
           <el-input-number v-model="imageOp.widthPixels" :min="1" :max="10000" placeholder="宽" />
           <el-input-number v-model="imageOp.heightPixels" :min="1" :max="10000" placeholder="高" />
           <el-button size="small" :loading="submitting" @click="submitMisc('image')">提交</el-button>

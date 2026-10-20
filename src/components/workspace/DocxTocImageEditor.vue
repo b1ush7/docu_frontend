@@ -31,13 +31,16 @@ import { ElButton, ElCheckbox, ElDialog, ElInput, ElInputNumber, ElOption, ElSel
  *   - 目录域是**域代码**，实际页码要等 Word 打开时更新（`updateFieldsOnOpen`）。
  *
  * 内嵌图片语义：
- *   - 图片必须来自**已有文件的明确版本**（imageFileId + imageVersionNo），不能直接上传。
+ *   - 图片选择器支持上传或选择已有文件的明确版本（imageFileId + imageVersionNo）。
  *   - 目标 `blockId` 必须是正文或表格单元格中的段落。
  *   - 宽高 1～10000 像素；单次最多 20 张，整批只创建一个版本。
  */
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { docxApi } from '@/api/docx'
+import DraftNotice from './DraftNotice.vue'
+import ImageAssetPicker from './ImageAssetPicker.vue'
+import { useEditorDraft } from '@/composables/useEditorDraft'
 import { useRequestGuard } from '@/composables/useRequestGuard'
 import { ApiError } from '@/api/http'
 import type {
@@ -153,6 +156,8 @@ watch(
     tocHyperlinks.value = true
     tocTitle.value = '目录'
     images.value = []
+    hfSectionNo.value = 1; hfLocation.value = 'HEADER'; hfType.value = 'DEFAULT'; hfLinked.value = true; hfText.value = ''
+    fnType.value = 'ADD'; fnTargetBlockId.value = ''; fnId.value = null; fnText.value = ''
     void load()
   },
   { flush: 'sync' },
@@ -176,6 +181,8 @@ async function submitToc(): Promise<void> {
     })
     if (!isCurrent()) return
     ElMessage.success('已创建新版本（目录页码需在 Word 中更新）')
+    submitting.value = false
+    editorDraft.saved(['tocPosition', 'tocMaxLevel', 'tocHyperlinks', 'tocTitle'])
     emit('edited', version)
     close()
   } catch (e) {
@@ -231,6 +238,8 @@ async function submitImages(): Promise<void> {
     })
     if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved(['images'])
     emit('edited', version)
     close()
   } catch (e) {
@@ -265,6 +274,8 @@ async function submitHf(): Promise<void> {
     })
     if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved(['hfSectionNo', 'hfLocation', 'hfType', 'hfLinked', 'hfText'])
     emit('edited', version)
     close()
   } catch (e) {
@@ -314,6 +325,8 @@ async function submitFootnote(): Promise<void> {
     const version = await docxApi.editFootnotes(fileId, versionNo, { operations: [op] })
     if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved(['fnType', 'fnTargetBlockId', 'fnId', 'fnText'])
     emit('edited', version)
     close()
   } catch (e) {
@@ -330,18 +343,35 @@ function preview(block: DocBlock): string {
   if (!text) return '（空段落）'
   return text.length > 30 ? `${text.slice(0, 30)}…` : text
 }
+
+const editorDraft = useEditorDraft({
+  busy: () => submitting.value,
+  name: 'DocxTocImageEditor', context: () => `${props.fileId}:${props.versionNo}`,
+  enabled: () => props.modelValue && !loading.value,
+  read: () => ({ tocPosition: tocPosition.value, tocMaxLevel: tocMaxLevel.value, tocHyperlinks: tocHyperlinks.value, tocTitle: tocTitle.value, images: images.value, hfSectionNo: hfSectionNo.value, hfLocation: hfLocation.value, hfType: hfType.value, hfLinked: hfLinked.value, hfText: hfText.value, fnType: fnType.value, fnTargetBlockId: fnTargetBlockId.value, fnId: fnId.value, fnText: fnText.value }), apply: value => { tocPosition.value = value.tocPosition; tocMaxLevel.value = value.tocMaxLevel; tocHyperlinks.value = value.tocHyperlinks; tocTitle.value = value.tocTitle; images.value = value.images; hfSectionNo.value = value.hfSectionNo; hfLocation.value = value.hfLocation; hfType.value = value.hfType; hfLinked.value = value.hfLinked; hfText.value = value.hfText; fnType.value = value.fnType; fnTargetBlockId.value = value.fnTargetBlockId; fnId.value = value.fnId; fnText.value = value.fnText },
+})
+async function requestClose(): Promise<void> {
+  if (submitting.value || !(await editorDraft.confirmClose())) return
+  emit('update:modelValue', false)
+}
+function beforeClose(done: () => void): void {
+  if (!submitting.value) void editorDraft.confirmClose().then(allowed => { if (allowed) done() })
+}
 </script>
 
 <template>
   <el-dialog
+    :before-close="beforeClose"
+    :close-on-press-escape="!submitting"
     append-to-body
     :model-value="modelValue"
     title="DOCX 目录与内嵌图片"
     width="780px"
     :close-on-click-modal="false"
-    @update:model-value="emit('update:modelValue', $event)"
+    @update:model-value="value => value ? emit('update:modelValue', true) : requestClose()"
   >
-    <div class="tie">
+    <div class="tie" :inert="submitting">
+      <DraftNotice :draft="editorDraft" />
       <p v-if="error" class="tie__hint tie__hint--warn" role="alert">{{ error }}</p>
       <p v-if="loading" class="tie__hint">加载中…</p>
 
@@ -383,7 +413,7 @@ function preview(block: DocBlock): string {
           </div>
 
           <div class="tie__actions">
-            <el-button size="small" @click="close">取消</el-button>
+            <el-button size="small" @click="requestClose">取消</el-button>
             <el-button type="primary" size="small" :loading="submitting" @click="submitToc">
               {{ toc?.present ? '刷新目录域' : '插入目录域' }}
             </el-button>
@@ -393,7 +423,7 @@ function preview(block: DocBlock): string {
         <!-- 内嵌图片 -->
         <el-tab-pane label="内嵌图片" name="image">
           <p class="tie__hint">
-            图片必须来自<strong>已有文件的明确版本</strong>（先上传图片拿到 fileId 与 versionNo），
+            选择或上传 PNG/JPEG 图片，并选定图片版本；
             目标段落必须是正文或单元格段落。宽高 1～10000 像素，单次最多 20 张。
           </p>
 
@@ -408,8 +438,7 @@ function preview(block: DocBlock): string {
                   :value="block.blockId"
                 />
               </el-select>
-              <el-input-number v-model="item.imageFileId" :min="1" placeholder="图片 fileId" />
-              <el-input-number v-model="item.imageVersionNo" :min="1" placeholder="版本" />
+              <ImageAssetPicker :file-id="item.imageFileId" :version-no="item.imageVersionNo" @select="value => { item.imageFileId = value.fileId; item.imageVersionNo = value.versionNo }" />
               <el-input-number v-model="item.widthPixels" :min="1" :max="10000" placeholder="宽" />
               <el-input-number v-model="item.heightPixels" :min="1" :max="10000" placeholder="高" />
               <el-button link type="danger" size="small" @click="removeImage(index)">移除</el-button>
@@ -419,7 +448,7 @@ function preview(block: DocBlock): string {
           <div class="tie__actions">
             <el-button size="small" @click="addImage">添加一张图片</el-button>
             <span class="tie__spacer" />
-            <el-button size="small" @click="close">取消</el-button>
+            <el-button size="small" @click="requestClose">取消</el-button>
             <el-button
               type="primary"
               size="small"
@@ -485,7 +514,7 @@ function preview(block: DocBlock): string {
           </div>
 
           <div class="tie__actions">
-            <el-button size="small" @click="close">取消</el-button>
+            <el-button size="small" @click="requestClose">取消</el-button>
             <el-button type="primary" size="small" :loading="submitting" @click="submitHf">提交设置</el-button>
           </div>
         </el-tab-pane>
@@ -535,7 +564,7 @@ function preview(block: DocBlock): string {
           </div>
 
           <div class="tie__actions">
-            <el-button size="small" @click="close">取消</el-button>
+            <el-button size="small" @click="requestClose">取消</el-button>
             <el-button type="primary" size="small" :loading="submitting" @click="submitFootnote">提交脚注操作</el-button>
           </div>
         </el-tab-pane>

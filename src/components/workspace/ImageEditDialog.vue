@@ -27,6 +27,8 @@ import { ElDialog, ElInput, ElInputNumber, ElOption, ElSelect } from 'element-pl
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { fileApi } from '@/api/file'
+import DraftNotice from './DraftNotice.vue'
+import { useEditorDraft } from '@/composables/useEditorDraft'
 import { useRequestGuard } from '@/composables/useRequestGuard'
 import { ApiError } from '@/api/http'
 import type { ImageEditOperation, ImageEditType, Version } from '@/api/types'
@@ -137,6 +139,8 @@ async function submit(): Promise<void> {
     })
     if (!isCurrent()) return
     ElMessage.success('已生成新版本')
+    submitting.value = false
+    editorDraft.saved()
     emit('edited', version)
     close()
   } catch (e) {
@@ -147,18 +151,35 @@ async function submit(): Promise<void> {
     if (isCurrent()) submitting.value = false
   }
 }
+
+const editorDraft = useEditorDraft({
+  busy: () => submitting.value,
+  name: 'ImageEditDialog', context: () => `${props.fileId}:${props.versionNo}`,
+  enabled: () => props.modelValue,
+  read: () => ({ operations: operations.value, outputFormat: outputFormat.value, jpegQuality: jpegQuality.value }), apply: value => { operations.value = value.operations; outputFormat.value = value.outputFormat; jpegQuality.value = value.jpegQuality },
+})
+async function requestClose(): Promise<void> {
+  if (submitting.value || !(await editorDraft.confirmClose())) return
+  emit('update:modelValue', false)
+}
+function beforeClose(done: () => void): void {
+  if (!submitting.value) void editorDraft.confirmClose().then(allowed => { if (allowed) done() })
+}
 </script>
 
 <template>
   <el-dialog
+    :before-close="beforeClose"
+    :close-on-press-escape="!submitting"
     append-to-body
     :model-value="modelValue"
     title="图片编辑"
     width="720px"
     :close-on-click-modal="false"
-    @update:model-value="emit('update:modelValue', $event)"
+    @update:model-value="value => value ? emit('update:modelValue', true) : requestClose()"
   >
-    <div class="img">
+    <div class="img" :inert="submitting">
+      <DraftNotice :draft="editorDraft" />
       <p class="img__hint">
         操作<strong>按顺序依次执行</strong>，顺序会影响结果（先裁剪再旋转 ≠ 先旋转再裁剪）。单次最多 20 个操作，提交后创建一个新版本。
       </p>
@@ -248,7 +269,7 @@ async function submit(): Promise<void> {
     </div>
 
     <template #footer>
-      <button class="img__btn" type="button" @click="close">取消</button>
+      <button class="img__btn" type="button" @click="requestClose">取消</button>
       <button class="img__btn img__btn--primary" type="button" :disabled="submitting || !operations.length" @click="submit">
         {{ submitting ? '提交中…' : '生成新版本' }}
       </button>

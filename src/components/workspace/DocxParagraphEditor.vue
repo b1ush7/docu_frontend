@@ -28,6 +28,8 @@ import { ElButton, ElDialog, ElInput, ElTabPane, ElTabs } from 'element-plus'
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { docxApi } from '@/api/docx'
+import DraftNotice from './DraftNotice.vue'
+import { useEditorDraft } from '@/composables/useEditorDraft'
 import { useRequestGuard } from '@/composables/useRequestGuard'
 import { ApiError } from '@/api/http'
 import type {
@@ -146,6 +148,8 @@ async function submitReplace(): Promise<void> {
     })
     if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved(['drafts'])
     emit('edited', version)
     close()
   } catch (e) {
@@ -205,6 +209,8 @@ async function submitEdits(): Promise<void> {
     })
     if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved(['edits'])
     emit('edited', version)
     close()
   } catch (e) {
@@ -214,18 +220,35 @@ async function submitEdits(): Promise<void> {
     if (isCurrent()) submitting.value = false
   }
 }
+
+const editorDraft = useEditorDraft({
+  busy: () => submitting.value,
+  name: 'DocxParagraphEditor', context: () => `${props.fileId}:${props.versionNo}`,
+  enabled: () => props.modelValue && !loading.value,
+  read: () => ({ drafts: drafts.value, edits: edits.value }), apply: value => { drafts.value = value.drafts; edits.value = value.edits },
+})
+async function requestClose(): Promise<void> {
+  if (submitting.value || !(await editorDraft.confirmClose())) return
+  emit('update:modelValue', false)
+}
+function beforeClose(done: () => void): void {
+  if (!submitting.value) void editorDraft.confirmClose().then(allowed => { if (allowed) done() })
+}
 </script>
 
 <template>
   <el-dialog
+    :before-close="beforeClose"
+    :close-on-press-escape="!submitting"
     append-to-body
     :model-value="modelValue"
     title="DOCX 段落编辑"
     width="820px"
     :close-on-click-modal="false"
-    @update:model-value="emit('update:modelValue', $event)"
+    @update:model-value="value => value ? emit('update:modelValue', true) : requestClose()"
   >
-    <div class="pe">
+    <div class="pe" :inert="submitting">
+      <DraftNotice :draft="editorDraft" />
       <p class="pe__hint">
         <strong>整批操作只创建一个新版本</strong>。编辑后 <code>blockId</code> 会失效，本对话框提交成功后会重新读取结构。
       </p>
@@ -255,7 +278,7 @@ async function submitEdits(): Promise<void> {
             </label>
           </div>
           <div class="pe__actions">
-            <el-button size="small" @click="close">取消</el-button>
+            <el-button size="small" @click="requestClose">取消</el-button>
             <el-button type="primary" size="small" :loading="submitting" :disabled="!changed.length" @click="submitReplace">
               提交 {{ changed.length }} 处替换
             </el-button>
@@ -301,7 +324,7 @@ async function submitEdits(): Promise<void> {
               </div>
             </div>
             <div class="pe__actions">
-              <el-button size="small" @click="close">取消</el-button>
+              <el-button size="small" @click="requestClose">取消</el-button>
               <el-button type="primary" size="small" :loading="submitting" @click="submitEdits">
                 提交 {{ edits.length }} 个操作
               </el-button>

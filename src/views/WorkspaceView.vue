@@ -42,6 +42,7 @@ import DocxFormatEditor from '@/components/workspace/DocxFormatEditor.vue'
 import DocxTableEditor from '@/components/workspace/DocxTableEditor.vue'
 import DocxTocImageEditor from '@/components/workspace/DocxTocImageEditor.vue'
 import { useUserStore } from '@/stores/user'
+import { confirmLeaveDrafts } from '@/composables/useEditorDraft'
 import { useCurrentUser } from '@/composables/useCurrentUser'
 import { usePreviewFlow } from '@/composables/usePreviewFlow'
 import { previewApi } from '@/api/preview'
@@ -106,6 +107,7 @@ const avatarChar = computed(() =>
  */
 async function onUserCommand(command: string): Promise<void> {
   if (userActionLoading.value) return
+  if (['admin', 'password', 'logout'].includes(command) && !(await confirmLeaveDrafts())) return
   if (command === 'admin' && user.value?.role === 'ADMIN') {
     await router.push('/admin')
     return
@@ -182,9 +184,9 @@ async function onFileSelect(file: FileAsset): Promise<void> {
  * 主内容区上传成功：同步文件列表并选中新文件
  * @param file 服务端返回的新文件资产
  */
-function onMainUploadSuccess(file: FileAsset): void {
-  // 列表面板刷新，让新文件出现在列表中
+async function onMainUploadSuccess(file: FileAsset): Promise<void> {
   fileListRef.value?.refresh()
+  if (!(await confirmLeaveDrafts())) return
   currentFileId.value = file.id
   selectedFile.value = file
   previewFlow.reset()
@@ -221,6 +223,7 @@ function onViewVersions(file: FileAsset): void {
 
 async function onVersionPreview(file: FileAsset, version: Pick<Version, 'versionNo'>): Promise<void> {
   if (previewFlow.busy.value || navigationLoading.value) return
+  if (!(await confirmLeaveDrafts())) return
   navigationLoading.value = true
   try {
     selectedFile.value = file
@@ -250,7 +253,7 @@ async function downloadSelected(): Promise<void> {
   finally { downloading.value = false }
 }
 async function onHistoryReply(sessionId: number, messageId: number): Promise<void> {
-  if (previewFlow.busy.value || navigationLoading.value) return
+  if (previewFlow.busy.value || navigationLoading.value || !(await confirmLeaveDrafts())) return
   navigationLoading.value = true
   try {
     const session = await previewFlow.restoreReply(sessionId, messageId)
@@ -320,7 +323,7 @@ async function onVersionCreated(version: Version): Promise<void> {
   finally { navigationLoading.value = false }
 }
 async function onTaskResult(task: Task): Promise<void> {
-  if (task.status !== 'SUCCEEDED' || task.fileId === null || task.outputVersion === null || previewFlow.busy.value || navigationLoading.value) return
+  if (task.status !== 'SUCCEEDED' || task.fileId === null || task.outputVersion === null || previewFlow.busy.value || navigationLoading.value || !(await confirmLeaveDrafts())) return
   navigationLoading.value = true
   try {
     const file = await fileApi.detail(task.fileId)
@@ -401,6 +404,7 @@ async function onExportPdf(): Promise<void> {
     ElMessage.error(e instanceof ApiError ? e.message : '导出 PDF 失败')
   }
 }
+async function onPreviewBack(): Promise<void> { if (await confirmLeaveDrafts()) previewFlow.back() }
 </script>
 
 <template>
@@ -476,6 +480,8 @@ async function onExportPdf(): Promise<void> {
           <!-- 状态一：上传与目标要求输入 -->
           <div v-show="previewFlow.mode.value === 'upload'" class="main-area__state">
             <MainUploadPanel
+              :active="previewFlow.mode.value === 'upload'"
+              :file-id="currentFileId"
               :has-file="currentFileId !== null"
               :file-name="selectedFile?.displayName"
               :busy="previewFlow.busy.value || navigationLoading"
@@ -487,6 +493,7 @@ async function onExportPdf(): Promise<void> {
           <!-- 状态二：生成中 / 文稿预览 + 底部操作按钮组 -->
           <div v-show="previewFlow.mode.value === 'preview'" class="main-area__state main-area__state--preview">
             <PreviewPanel
+              :active="previewFlow.mode.value === 'preview'"
               :task="previewFlow.activeTask.value"
               :changes="previewFlow.changes.value"
               :plan-status="previewFlow.planStatus.value"
@@ -509,7 +516,7 @@ async function onExportPdf(): Promise<void> {
               :can-edit-table="previewFlow.previewVersion.value?.extension === 'docx'"
               :can-toc-image="previewFlow.previewVersion.value?.extension === 'docx'"
               :busy="previewFlow.busy.value"
-              @back="previewFlow.back()"
+              @back="onPreviewBack"
               @confirm="previewFlow.confirm()"
               @discard="previewFlow.discard()"
               @export="onExportPdf"

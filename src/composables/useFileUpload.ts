@@ -84,6 +84,7 @@ export function useFileUpload(options: UseFileUploadOptions) {
       })
       // 上传成功：清空错误并通知调用方
       error.value = ''
+      uploading.value = false
       options.onUploaded(asset)
     } catch (e) {
       // ApiError 的 message 已是面向用户的友好提示（401 刷新 / 413 / 415 等），直接展示

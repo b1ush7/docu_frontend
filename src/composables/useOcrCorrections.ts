@@ -1,10 +1,14 @@
 import { computed, ref, watch } from 'vue'
+import { useUserStore } from '@/stores/user'
 import { ocrApi } from '@/api/ocr'
 import { ApiError } from '@/api/http'
 import { useRequestGuard } from './useRequestGuard'
 import type { OcrCorrection, OcrPageCorrection, OcrResult, OcrParams } from '@/api/types'
 
 export function useOcrCorrections(context: () => { visible: boolean; fileId: number | null; versionNo: number | null }) {
+  const account = useUserStore()
+  const cacheError = ref('')
+  const cacheKey = () => account.user?.id == null ? '' : `wenshu.ocr.v1:${account.user.id}:${context().fileId}:${context().versionNo}`
   const result = ref<OcrResult | null>(null)
   const pages = ref<OcrPageCorrection[]>([])
   const baseline = ref('[]')
@@ -17,15 +21,17 @@ export function useOcrCorrections(context: () => { visible: boolean; fileId: num
   const organized = ref('')
   const dirty = computed(() => JSON.stringify(pages.value) !== baseline.value)
   const busy = computed(() => recognizing.value || saving.value || organizing.value)
-  // Keep only the last recognition in memory; reopening reads corrections from the server.
+  // Restore the recognition envelope locally, then read saved corrections from the server.
+  // Never trigger a paid recognition simply by reopening the dialog.
   let cached: OcrResult | null = null
-  const guard = useRequestGuard(() => { const c = context(); return [c.visible, c.fileId, c.versionNo] })
-  watch(() => { const c = context(); return [c.visible, c.fileId, c.versionNo] }, () => {
+  let cachedKey = ''
+  const guard = useRequestGuard(() => { const c = context(); return [c.visible, c.fileId, c.versionNo, account.user?.id] })
+  watch(() => { const c = context(); return [c.visible, c.fileId, c.versionNo, account.user?.id] }, () => {
     result.value = null; pages.value = []; baseline.value = '[]'
     error.value = ''; organized.value = ''; restored.value = false; correctionReady.value = false
     recognizing.value = false; saving.value = false; organizing.value = false
     if (context().visible) void restoreCached()
-  }, { flush: 'sync' })
+  }, { flush: 'sync', immediate: true })
 
   function applySaved(saved: OcrCorrection): void {
     const byPage = new Map(saved.pages.map(p => [p.pageNo, p]))
@@ -55,7 +61,21 @@ export function useOcrCorrections(context: () => { visible: boolean; fileId: num
     if (!value.pages.length) error.value = '未识别到内容'
   }
   async function restoreCached(): Promise<void> {
-    const { fileId, versionNo } = context()
+    const { visible, fileId, versionNo } = context()
+    if (!visible || busy.value) return
+    error.value = ''
+    const key = cacheKey()
+    if (!key) return
+    if (cachedKey !== key) {
+      cached = null; cachedKey = key
+      try {
+        const raw = sessionStorage.getItem(key)
+        if (raw) {
+          const parsed = JSON.parse(raw) as OcrResult
+          if (parsed.fileId === fileId && parsed.versionNo === versionNo && typeof parsed.fingerprint === 'string' && Array.isArray(parsed.pages)) cached = parsed
+        }
+      } catch { cacheError.value = '无法恢复本浏览器的识别结果，可重新识别' }
+    }
     if (!cached || cached.fileId !== fileId || cached.versionNo !== versionNo) return
     const current = guard()
     recognizing.value = true
@@ -72,7 +92,11 @@ export function useOcrCorrections(context: () => { visible: boolean; fileId: num
     try {
       const value = await ocrApi.recognize(fileId, versionNo, params)
       if (!current()) return
-      cached = value
+      cached = value; cachedKey = cacheKey()
+      try {
+        if (cachedKey) sessionStorage.setItem(cachedKey, JSON.stringify(value))
+        cacheError.value = cachedKey ? '' : '当前账号信息尚未就绪，识别结果暂时只保留在内存中'
+      } catch { cacheError.value = '识别结果超出浏览器存储限额或存储被禁用；关闭页面后可能需要重新识别' }
       await loadCorrections(value, current)
     } catch (cause) {
       if (current()) error.value = cause instanceof Error ? cause.message : '识别或读取校正失败，请重试'
@@ -128,5 +152,5 @@ export function useOcrCorrections(context: () => { visible: boolean; fileId: num
     return new Blob([text], { type: 'text/plain;charset=utf-8' })
   }
   return { result, pages, dirty, busy, recognizing, saving, organizing, restored, correctionReady,
-    error, organized, recognize, saveCorrections, organize, exportBlob }
+    error, cacheError, organized, restoreCached, recognize, saveCorrections, organize, exportBlob }
 }

@@ -11,6 +11,7 @@
  *              - 注册 401 兜底回调：请求层 Token 刷新失败时跳转登录页。
  */
 import { createRouter, createWebHistory } from 'vue-router'
+import { confirmLeaveDrafts } from '@/composables/useEditorDraft'
 import { ElMessage } from 'element-plus'
 
 import { getCurrentUser } from '@/api/auth'
@@ -101,7 +102,8 @@ setUnauthorizedHandler(() => {
   }
 })
 
-router.beforeEach(async (to) => {
+router.beforeEach(async (to, from) => {
+  if (to.path !== from.path && !(await confirmLeaveDrafts())) return false
   document.title = to.meta.title ? `${to.meta.title} · 文枢` : '文枢'
 
   // 【临时】预览模式：注入假管理员身份并放行所有页面，联调前删除

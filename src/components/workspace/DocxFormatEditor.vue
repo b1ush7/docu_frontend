@@ -34,6 +34,8 @@ import { ElButton, ElDialog, ElInputNumber, ElOption, ElSelect } from 'element-p
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { docxApi } from '@/api/docx'
+import DraftNotice from './DraftNotice.vue'
+import { useEditorDraft } from '@/composables/useEditorDraft'
 import { useRequestGuard } from '@/composables/useRequestGuard'
 import { ApiError } from '@/api/http'
 import type { DocBlock, DocxParagraphFormatOperation, DocxStructure, Version } from '@/api/types'
@@ -175,6 +177,8 @@ async function submit(): Promise<void> {
     })
     if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved()
     emit('edited', version)
     close()
   } catch (e) {
@@ -184,18 +188,35 @@ async function submit(): Promise<void> {
     if (isCurrent()) submitting.value = false
   }
 }
+
+const editorDraft = useEditorDraft({
+  busy: () => submitting.value,
+  name: 'DocxFormatEditor', context: () => `${props.fileId}:${props.versionNo}`,
+  enabled: () => props.modelValue && !loading.value,
+  read: () => ({ operations: operations.value }), apply: value => { operations.value = value.operations },
+})
+async function requestClose(): Promise<void> {
+  if (submitting.value || !(await editorDraft.confirmClose())) return
+  emit('update:modelValue', false)
+}
+function beforeClose(done: () => void): void {
+  if (!submitting.value) void editorDraft.confirmClose().then(allowed => { if (allowed) done() })
+}
 </script>
 
 <template>
   <el-dialog
+    :before-close="beforeClose"
+    :close-on-press-escape="!submitting"
     append-to-body
     :model-value="modelValue"
     title="DOCX 段落格式"
     width="780px"
     :close-on-click-modal="false"
-    @update:model-value="emit('update:modelValue', $event)"
+    @update:model-value="value => value ? emit('update:modelValue', true) : requestClose()"
   >
-    <div class="fe">
+    <div class="fe" :inert="submitting">
+      <DraftNotice :draft="editorDraft" />
       <p class="fe__hint">
         只支持<strong>正文或表格单元格中的段落</strong>，页眉页脚段落不在范围内。
         整批操作<strong>只创建一个新版本</strong>。
@@ -245,7 +266,7 @@ async function submit(): Promise<void> {
           <div class="fe__actions">
             <el-button size="small" @click="addOperation">添加格式操作</el-button>
             <span class="fe__spacer" />
-            <el-button size="small" @click="close">取消</el-button>
+            <el-button size="small" @click="requestClose">取消</el-button>
             <el-button type="primary" size="small" :loading="submitting" :disabled="!operations.length" @click="submit">
               提交 {{ operations.length }} 个操作
             </el-button>

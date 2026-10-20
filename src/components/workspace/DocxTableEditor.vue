@@ -37,6 +37,8 @@ import { ElButton, ElCheckbox, ElDialog, ElInput, ElInputNumber, ElOption, ElSel
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { docxApi } from '@/api/docx'
+import DraftNotice from './DraftNotice.vue'
+import { useEditorDraft } from '@/composables/useEditorDraft'
 import { useRequestGuard } from '@/composables/useRequestGuard'
 import { ApiError } from '@/api/http'
 import type { DocBlock, DocxStructure, DocxTableEditOperation, Version } from '@/api/types'
@@ -217,6 +219,8 @@ async function submit(): Promise<void> {
     })
     if (!isCurrent()) return
     ElMessage.success('已创建新版本')
+    submitting.value = false
+    editorDraft.saved()
     emit('edited', version)
     close()
   } catch (e) {
@@ -235,18 +239,35 @@ function cellText(cell: DocBlock): string {
     .join(' ')
     .trim()
 }
+
+const editorDraft = useEditorDraft({
+  busy: () => submitting.value,
+  name: 'DocxTableEditor', context: () => `${props.fileId}:${props.versionNo}`,
+  enabled: () => props.modelValue && !loading.value,
+  read: () => ({ operations: operations.value }), apply: value => { operations.value = value.operations },
+})
+async function requestClose(): Promise<void> {
+  if (submitting.value || !(await editorDraft.confirmClose())) return
+  emit('update:modelValue', false)
+}
+function beforeClose(done: () => void): void {
+  if (!submitting.value) void editorDraft.confirmClose().then(allowed => { if (allowed) done() })
+}
 </script>
 
 <template>
   <el-dialog
+    :before-close="beforeClose"
+    :close-on-press-escape="!submitting"
     append-to-body
     :model-value="modelValue"
     title="DOCX 表格编辑"
     width="860px"
     :close-on-click-modal="false"
-    @update:model-value="emit('update:modelValue', $event)"
+    @update:model-value="value => value ? emit('update:modelValue', true) : requestClose()"
   >
-    <div class="te">
+    <div class="te" :inert="submitting">
+      <DraftNotice :draft="editorDraft" />
       <p class="te__hint">
         白名单在<strong>操作列表</strong>里逐条添加，最后一次性提交 —— 整批<strong>只创建一个新版本</strong>。
         单元格操作选 <code>CELL</code>，行操作选 <code>ROW</code>。
@@ -332,7 +353,7 @@ function cellText(cell: DocBlock): string {
           <div class="te__actions">
             <el-button size="small" @click="addOperation">添加操作</el-button>
             <span class="te__spacer" />
-            <el-button size="small" @click="close">取消</el-button>
+            <el-button size="small" @click="requestClose">取消</el-button>
             <el-button type="primary" size="small" :loading="submitting" :disabled="!operations.length" @click="submit">
               提交 {{ operations.length }} 个操作
             </el-button>

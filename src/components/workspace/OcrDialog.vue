@@ -18,6 +18,8 @@ import { ElDialog } from 'element-plus'
  */
 import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import DraftNotice from './DraftNotice.vue'
+import { useEditorDraft } from '@/composables/useEditorDraft'
 import { useOcrCorrections } from '@/composables/useOcrCorrections'
 import { saveBlob } from '@/utils/download'
 import { buildOcrParams } from '@/utils/ocrOptions'
@@ -31,7 +33,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ (e: 'update:modelValue', value: boolean): void }>()
 const { result, pages, dirty, busy, recognizing, saving, organizing, restored, correctionReady,
-  error, organized, recognize: runRecognition, saveCorrections: save, organize, exportBlob } = useOcrCorrections(
+  error, cacheError, organized, restoreCached, recognize: runRecognition, saveCorrections: save, organize, exportBlob } = useOcrCorrections(
   () => ({ visible: props.modelValue, fileId: props.fileId, versionNo: props.versionNo }),
 )
 const options = reactive<OcrParams>({ language: '', dpi: 150, rotationDegrees: 0, enhance: false, denoise: false, sharpen: false, lowLight: false })
@@ -42,13 +44,19 @@ const isImage = computed(() => ['png', 'jpg', 'jpeg'].includes(props.extension?.
 async function recognize(): Promise<void> {
   try {
     const params = buildOcrParams({ ...options, region: regionEnabled.value ? { ...region } : undefined }, pageText.value, isImage.value)
+    if (!(await editorDraft.confirmClose())) return
     await runRecognition(params)
   } catch (cause) { error.value = cause instanceof Error ? cause.message : '识别参数无效' }
 }
 const reviewCount = computed(() => (result.value?.pages ?? []).filter(p => p.needsReview).length)
-function close(): void { emit('update:modelValue', false) }
+async function close(): Promise<void> {
+  if (!busy.value && await editorDraft.confirmClose()) emit('update:modelValue', false)
+}
+function beforeClose(done: () => void): void {
+  if (!busy.value) void editorDraft.confirmClose().then(allowed => { if (allowed) done() })
+}
 async function saveCorrections(): Promise<void> {
-  if (await save()) ElMessage.success('校正已保存（未创建新版本）')
+  if (await save()) { editorDraft.saved(); ElMessage.success('校正已保存（未创建新版本）') }
 }
 function exportText(): void {
   if (!result.value || busy.value || !correctionReady.value) return
@@ -59,6 +67,12 @@ function exportText(): void {
 function sourceLabel(page: OcrPage): string {
   return { NATIVE: '原生文字', OCR: 'OCR 识别', EMPTY: '空白页' }[page.source] ?? page.source
 }
+const editorDraft = useEditorDraft({
+  busy: () => busy.value,
+  name: 'ocr', context: () => `${props.fileId}:${props.versionNo}:${result.value?.fingerprint ?? ''}`,
+  enabled: () => props.modelValue && correctionReady.value,
+  read: () => ({ pages: pages.value }), apply: value => { pages.value = value.pages },
+})
 </script>
 
 <template>
@@ -68,9 +82,13 @@ function sourceLabel(page: OcrPage): string {
     title="OCR 识别与校正"
     width="min(860px, 96vw)"
     :close-on-click-modal="false"
-    @update:model-value="emit('update:modelValue', $event)"
+    :before-close="beforeClose"
+    :close-on-press-escape="!busy"
+    @update:model-value="value => { if (!value) void close() }"
   >
     <div class="ocr">
+      <DraftNotice :draft="editorDraft" />
+      <p v-if="cacheError" role="alert">{{ cacheError }}</p>
       <p class="ocr__hint">
         识别 PDF 扫描页或 PNG/JPEG 图片。识别为同步调用，<strong>不会创建新版本</strong>；保存校正同样不覆盖原文件。
       </p>
@@ -122,6 +140,7 @@ function sourceLabel(page: OcrPage): string {
       </div>
 
       <p v-if="error" class="ocr__hint ocr__hint--error" role="alert">{{ error }}</p>
+      <button v-if="result && !correctionReady" type="button" :disabled="busy" @click="restoreCached">重新读取已保存校正</button>
 
       <p v-if="result" class="ocr__summary">
         {{ restored ? '已读取已保存校正' : '尚未保存校正' }} · 导出包含当前文本草稿；AI 整理需先保存。<br />
