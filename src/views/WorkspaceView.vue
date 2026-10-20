@@ -21,8 +21,7 @@ import { ElButton, ElDropdown, ElDropdownItem, ElDropdownMenu } from 'element-pl
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { logout as apiLogout } from '@/api/auth'
-import { clearTokens } from '@/utils/token'
+import { useUserStore } from '@/stores/user'
 import WorkspaceLayout from '@/components/workspace/WorkspaceLayout.vue'
 import FileListPanel from '@/components/workspace/FileListPanel.vue'
 import TaskListPanel from '@/components/workspace/TaskListPanel.vue'
@@ -41,8 +40,8 @@ import DocxParagraphEditor from '@/components/workspace/DocxParagraphEditor.vue'
 import DocxFormatEditor from '@/components/workspace/DocxFormatEditor.vue'
 import DocxTableEditor from '@/components/workspace/DocxTableEditor.vue'
 import DocxTocImageEditor from '@/components/workspace/DocxTocImageEditor.vue'
-import { useUserStore } from '@/stores/user'
 import { confirmLeaveDrafts } from '@/composables/useEditorDraft'
+
 import { useCurrentUser } from '@/composables/useCurrentUser'
 import { usePreviewFlow } from '@/composables/usePreviewFlow'
 import { previewApi } from '@/api/preview'
@@ -126,12 +125,10 @@ async function onUserCommand(command: string): Promise<void> {
     return
   }
   if (command !== 'logout') return
-  try {
-    await apiLogout()
-  } catch {
-    // 忽略：撤销失败不阻止本地登出
-  }
-  clearTokens()
+  // 必须走 store 的 logout：它在内部 try/catch 后端撤销，并同时清掉 tokens 与 user。
+  // 之前这里只调 apiLogout() + clearTokens()（仅清 localStorage），store 里的 tokens 仍在，
+  // 路由守卫据此认为「已登录」，跳 /login 会被立刻重定向回首页 —— 表现为退出后没回到登录页。
+  await account.logout()
   ElMessage.success('已退出登录')
   router.push('/login')
 }
