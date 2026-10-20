@@ -1,4 +1,24 @@
 <script setup lang="ts">
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-button.css'
+import 'element-plus/theme-chalk/el-checkbox.css'
+import 'element-plus/theme-chalk/el-overlay.css'
+import 'element-plus/theme-chalk/el-dialog.css'
+import 'element-plus/theme-chalk/el-input.css'
+import 'element-plus/theme-chalk/el-input-number.css'
+import 'element-plus/theme-chalk/el-option.css'
+import 'element-plus/theme-chalk/el-scrollbar.css'
+import 'element-plus/theme-chalk/el-popper.css'
+import 'element-plus/theme-chalk/el-tag.css'
+import 'element-plus/theme-chalk/el-option-group.css'
+import 'element-plus/theme-chalk/el-select.css'
+import 'element-plus/theme-chalk/el-pagination.css'
+import 'element-plus/theme-chalk/el-tooltip.css'
+import 'element-plus/theme-chalk/el-table.css'
+import 'element-plus/theme-chalk/el-table-column.css'
+
+import { ElButton, ElCheckbox, ElDialog, ElInput, ElInputNumber, ElOption, ElPagination, ElSelect, ElTable, ElTableColumn, ElTag } from 'element-plus'
+
 /**
  * @component ModelConfigsView
  * @description 模型配置管理（API.md 第 7 章 /admin/model-configs）。
@@ -241,11 +261,11 @@ onMounted(load)
       </el-table-column>
       <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
-          <el-button link size="small" @click="openEdit(row)">编辑</el-button>
-          <el-button link size="small" @click="toggleStatus(row)">
+          <el-button link size="small" @click="openEdit(row as ModelConfig)">编辑</el-button>
+          <el-button link size="small" @click="toggleStatus(row as ModelConfig)">
             {{ row.status === 'ENABLED' ? '停用' : '启用' }}
           </el-button>
-          <el-button link size="small" type="danger" @click="remove(row)">删除</el-button>
+          <el-button link size="small" type="danger" @click="remove(row as ModelConfig)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>

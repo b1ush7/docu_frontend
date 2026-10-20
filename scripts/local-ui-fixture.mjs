@@ -3,7 +3,7 @@ import { createServer } from 'node:http'
 import { createServer as createViteServer } from 'vite'
 const apiPort = 8941
 process.env.VITE_API_BASE_URL = `http://127.0.0.1:${apiPort}`
-const user = { id: 700, username: 'local_qa', role: 'USER', status: 'ENABLED', phone: null, balance: 0 }
+const user = { id: 700, username: 'local_qa', role: 'ADMIN', status: 'ENABLED', phone: null, balance: 0 }
 const assets = [
   { id: 9, displayName: '排版测试.docx', originalName: '排版测试.docx', extension: 'docx', latestVersion: 3 },
   { id: 10, displayName: '转换测试.pdf', originalName: '转换测试.pdf', extension: 'pdf', latestVersion: 1 },
@@ -27,6 +27,7 @@ const session = { id: 4, userId: 700, fileId: 9, title: '统一排版', status: 
 const reply = { message: { id: 88, sessionId: 4, role: 'ASSISTANT', content: '请确认字体修改' }, runStatus: 'COMPLETED', planStatus: 'PENDING', sourceVersion: 3, outputVersion: null,
   result: { reply: '将正文统一为宋体小四。', usage: { elapsedMs: 1 }, verificationNotice: '请在确认后检查版面。', truncated: false },
   changes: [{ type: 'NORMALIZE_DOCX_FORMAT', target: 'body', before: '源版本中匹配 2 个正文段落', after: '{"scope":"BODY","fontFamily":"宋体","fontSizePoints":12}' }] }
+const corrections = new Map()
 let tasks = [], pollCount = 0, sessionDeleted = false
 const server = createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -41,11 +42,30 @@ const server = createServer(async (req, res) => {
   const json = data => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ code: 0, data, msg: '' })) }
   if (path === '/user/login') return json({ accessToken: 'local-access', refreshToken: 'local-refresh', expiresIn: 900, refreshExpiresIn: 604800 })
   if (path === '/user/me') return json(user)
+  if (path === '/user/logout-all') return json(2)
+  if (path === '/user/logout') return json(null)
+  if (path === '/admin/statistics/overview') return json({ totalUsers: 12, enabledUsers: 10, disabledUsers: 2, adminUsers: 1, activeFiles: 24, deletedFiles: 2, storageBytes: 1234567, totalTasks: 30, pendingTasks: 2, runningTasks: 1, succeededTasks: 23, failedTasks: 3, cancelledTasks: 1, taskFailureRate: 0.1154 })
+  if (path === '/admin/statistics/trend') {
+    const from = url.searchParams.get('from'), to = url.searchParams.get('to')
+    const points = []
+    for (let date = new Date(from + 'T00:00:00Z'); date <= new Date(to + 'T00:00:00Z'); date.setUTCDate(date.getUTCDate() + 1)) {
+      const index = points.length
+      points.push({ date: date.toISOString().slice(0, 10), newUsers: index % 4, uploadedFiles: index % 7, createdTasks: index % 9, succeededTasks: index % 6, failedTasks: index % 2 })
+    }
+    return json({ from, to, timezone: 'Asia/Shanghai', points })
+  }
+  if (path === '/admin/audit-logs') return json({ records: [], total: 0, page: 1, size: 20 })
   if (path === '/file/list') return json({ records: assets, total: assets.length, page: 1, size: 20, pages: 1 })
   const fileMatch = path.match(/^\/file\/(\d+)(?:\/versions(?:\/(\d+))?)?(.*)$/)
   if (fileMatch) {
     const file = assets.find(asset => asset.id === Number(fileMatch[1]))
     const versionNo = Number(fileMatch[2] || file?.latestVersion), suffix = fileMatch[3]
+    if (file && suffix === '/ocr' && req.method === 'POST') return json({ fileId: file.id, versionNo, fingerprint: 'a'.repeat(64), engine: 'local-fixture', language: body.language || 'chi_sim+eng', totalPages: 1, renderedPages: 1, truncated: false, pages: [{ pageNo: 1, source: 'OCR', text: '测试表格', confidence: 95, needsReview: false, tables: [{ rows: 1, columns: 2, cells: [{ row: 0, column: 0, rowSpan: 1, columnSpan: 1, text: '姓名' }, { row: 0, column: 1, rowSpan: 1, columnSpan: 1, text: '张三' }] }] }] })
+    if (file && suffix === '/ocr/corrections' && req.method === 'PUT') { corrections.set(file.id, body); return json(body) }
+    if (file && suffix.startsWith('/ocr/corrections/')) {
+      if (corrections.has(file.id)) return json(corrections.get(file.id))
+      res.statusCode = 404; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ code: 404, msg: '尚无校正', data: null })); return
+    }
     if (file && suffix === '/restore') return json(appendVersion(file, versions(file)[versionNo - 1].extension))
     if (file && suffix === '/download') { res.setHeader('Content-Type', file.contentType); res.end('local QA download'); return }
     if (file && path.endsWith('/versions')) return json([...versions(file)].reverse())
@@ -59,7 +79,7 @@ const server = createServer(async (req, res) => {
   if (path === '/ai/sessions') return json({ records: sessionDeleted ? [] : [session], total: sessionDeleted ? 0 : 1, page: 1, size: 10, pages: 1 })
   if (path === '/ai/sessions/4' && req.method === 'DELETE') { sessionDeleted = true; return json(null) }
   if (path === '/ai/sessions/4') return json(session)
-  if (path.endsWith('/messages')) return json([{ id: 87, sessionId: 4, role: 'USER', content: '请统一正文格式' }, reply.message])
+  if (path.endsWith('/messages')) return json([{ id: 87, sessionId: 4, role: 'ADMIN', content: '请统一正文格式' }, reply.message])
   if (path.endsWith('/archive')) { session.status = 'ARCHIVED'; return json(session) }
   if (path.endsWith('/confirm')) {
     if (reply.planStatus !== 'CONFIRMED' && reply.sourceVersion !== assets[0].latestVersion) {

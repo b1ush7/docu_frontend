@@ -9,7 +9,15 @@ export default defineConfig({
   // 浏览器会去域名根目录找（jenandygyt-web.github.io/assets/...）而实际文件在
   // /docu_frontend/assets/... → 404 → #app 为空 → 白屏。
   base: '/docu_frontend/',
-  plugins: [vue()],
+  plugins: [
+    // Modern browser targets use WOFF2; omit legacy fallback copies from fontsource CSS.
+    { name: 'woff2-fonts', enforce: 'pre', transform(code, id) {
+      if (id.includes('/@fontsource/') && id.endsWith('.css')) {
+        return code.replace(/,\s*url\([^)]*\.woff\)\s*format\(['"]woff['"]\)/g, '')
+      }
+    } },
+    vue(),
+  ],
   resolve: {
     // 统一使用 @ 指向 src 目录，避免组件内出现多层相对路径
     alias: {

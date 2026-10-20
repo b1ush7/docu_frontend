@@ -1,4 +1,17 @@
 <script setup lang="ts">
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-overlay.css'
+import 'element-plus/theme-chalk/el-dialog.css'
+import 'element-plus/theme-chalk/el-input.css'
+import 'element-plus/theme-chalk/el-option.css'
+import 'element-plus/theme-chalk/el-scrollbar.css'
+import 'element-plus/theme-chalk/el-popper.css'
+import 'element-plus/theme-chalk/el-tag.css'
+import 'element-plus/theme-chalk/el-option-group.css'
+import 'element-plus/theme-chalk/el-select.css'
+
+import { ElDialog, ElInput, ElOption, ElSelect } from 'element-plus'
+
 /**
  * @component TemplateGenerateDialog
  * @description 按公共模板生成新的 DOCX 文件（API.md 4.2 模板模式）。
@@ -16,12 +29,15 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { templateApi } from '@/api/template'
 import { docxApi } from '@/api/docx'
+import { useRequestGuard } from '@/composables/useRequestGuard'
 import { ApiError } from '@/api/http'
 import type { DocTemplate, DocTemplateVariable, FileAsset } from '@/api/types'
 
 const props = defineProps<{
   modelValue: boolean
 }>()
+
+const requestGuard = useRequestGuard(() => [props.modelValue])
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
@@ -87,15 +103,20 @@ function close(): void {
 
 /** 加载已启用模板 */
 async function loadTemplates(): Promise<void> {
+  const isCurrent = requestGuard('loadTemplates')
+
   loading.value = true
   error.value = ''
   try {
-    templates.value = await templateApi.list()
+    const response = await templateApi.list()
+    if (!isCurrent()) return
+    templates.value = response
     selectedId.value = templates.value[0]?.id ?? null
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '模板列表加载失败'
   } finally {
-    loading.value = false
+    if (isCurrent()) loading.value = false
   }
 }
 
@@ -103,6 +124,8 @@ async function loadTemplates(): Promise<void> {
 watch(
   () => props.modelValue,
   (visible) => {
+    submitting.value = false
+    loading.value = false
     if (!visible) return
     selectedId.value = null
     values.value = {}
@@ -111,6 +134,7 @@ watch(
     error.value = ''
     void loadTemplates()
   },
+  { flush: 'sync' },
 )
 
 // 切换模板时清空已填变量（不同模板的变量集合不同）
@@ -120,6 +144,9 @@ watch(selectedId, () => {
 
 /** 按模板生成 DOCX */
 async function submit(): Promise<void> {
+  if (submitting.value) return
+  const isCurrent = requestGuard('submit')
+
   const template = selected.value
   if (!template) return
   if (missingRequired.value.length) {
@@ -140,14 +167,16 @@ async function submit(): Promise<void> {
       fileName: fileName.value.trim() || undefined,
       title: title.value.trim() || undefined,
     })
+    if (!isCurrent()) return
     ElMessage.success('文档已生成')
     emit('created', file)
     close()
   } catch (e) {
+    if (!isCurrent()) return
     // 400：模板无文件或参数不合法；404：模板不存在；422：模板内容无法渲染
     error.value = e instanceof ApiError ? e.message : '生成失败'
   } finally {
-    submitting.value = false
+    if (isCurrent()) submitting.value = false
   }
 }
 </script>

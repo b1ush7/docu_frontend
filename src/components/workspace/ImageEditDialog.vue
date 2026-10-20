@@ -1,4 +1,18 @@
 <script setup lang="ts">
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-overlay.css'
+import 'element-plus/theme-chalk/el-dialog.css'
+import 'element-plus/theme-chalk/el-input.css'
+import 'element-plus/theme-chalk/el-input-number.css'
+import 'element-plus/theme-chalk/el-option.css'
+import 'element-plus/theme-chalk/el-scrollbar.css'
+import 'element-plus/theme-chalk/el-popper.css'
+import 'element-plus/theme-chalk/el-tag.css'
+import 'element-plus/theme-chalk/el-option-group.css'
+import 'element-plus/theme-chalk/el-select.css'
+
+import { ElDialog, ElInput, ElInputNumber, ElOption, ElSelect } from 'element-plus'
+
 /**
  * @component ImageEditDialog
  * @description PNG/JPEG 的受控像素编辑与格式转换（API.md 3.20）。
@@ -13,6 +27,7 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { fileApi } from '@/api/file'
+import { useRequestGuard } from '@/composables/useRequestGuard'
 import { ApiError } from '@/api/http'
 import type { ImageEditOperation, ImageEditType, Version } from '@/api/types'
 
@@ -21,6 +36,8 @@ const props = defineProps<{
   fileId: number | null
   versionNo: number | null
 }>()
+
+const requestGuard = useRequestGuard(() => [props.modelValue, props.fileId, props.versionNo])
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
@@ -86,19 +103,26 @@ function onTypeChange(): void {
 
 // 打开时重置
 watch(
-  () => props.modelValue,
-  (visible) => {
+  () => [props.modelValue, props.fileId, props.versionNo] as const,
+  ([visible]) => {
+    submitting.value = false
     if (!visible) return
     operations.value = []
     outputFormat.value = 'PNG'
     jpegQuality.value = 0.9
     error.value = ''
   },
+  { flush: 'sync' },
 )
 
 /** 提交编辑 */
 async function submit(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  if (submitting.value) return
+  const isCurrent = requestGuard('submit')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   if (!operations.value.length) {
     error.value = '至少添加一个操作'
     return
@@ -106,19 +130,21 @@ async function submit(): Promise<void> {
   submitting.value = true
   error.value = ''
   try {
-    const version = await fileApi.editImage(props.fileId, props.versionNo, {
+    const version = await fileApi.editImage(fileId, versionNo, {
       outputFormat: outputFormat.value,
       jpegQuality: outputFormat.value === 'JPEG' ? jpegQuality.value : undefined,
       operations: operations.value as ImageEditOperation[],
     })
+    if (!isCurrent()) return
     ElMessage.success('已生成新版本')
     emit('edited', version)
     close()
   } catch (e) {
+    if (!isCurrent()) return
     // 415：不是图片；422：图片损坏或参数不可执行；400：操作不合法
     error.value = e instanceof ApiError ? e.message : '图片编辑失败'
   } finally {
-    submitting.value = false
+    if (isCurrent()) submitting.value = false
   }
 }
 </script>

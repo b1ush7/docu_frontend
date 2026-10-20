@@ -154,15 +154,17 @@ const emit = defineEmits<{
 <style scoped lang="scss">
 .preview-actions {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  justify-content: flex-start;
   gap: $gap-sm;
   padding: $gap-sm 0 $gap-sm;
 }
 
 .preview-actions__btn {
+  flex: 0 1 auto;
   min-width: 96px; // 结构尺寸：保证两按钮视觉均衡
   height: $control-height;
-  padding: 0 $card-padding;
+  padding: 0 $gap-sm;
   font: inherit;
   font-size: $font-size-body;
   border-radius: $radius;

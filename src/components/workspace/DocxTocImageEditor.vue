@@ -1,4 +1,25 @@
 <script setup lang="ts">
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-button.css'
+import 'element-plus/theme-chalk/el-checkbox.css'
+import 'element-plus/theme-chalk/el-overlay.css'
+import 'element-plus/theme-chalk/el-dialog.css'
+import 'element-plus/theme-chalk/el-input.css'
+import 'element-plus/theme-chalk/el-input-number.css'
+import 'element-plus/theme-chalk/el-option.css'
+import 'element-plus/theme-chalk/el-scrollbar.css'
+import 'element-plus/theme-chalk/el-popper.css'
+import 'element-plus/theme-chalk/el-tag.css'
+import 'element-plus/theme-chalk/el-option-group.css'
+import 'element-plus/theme-chalk/el-select.css'
+import 'element-plus/theme-chalk/el-tab-pane.css'
+import 'element-plus/theme-chalk/el-tooltip.css'
+import 'element-plus/theme-chalk/el-table.css'
+import 'element-plus/theme-chalk/el-table-column.css'
+import 'element-plus/theme-chalk/el-tabs.css'
+
+import { ElButton, ElCheckbox, ElDialog, ElInput, ElInputNumber, ElOption, ElSelect, ElTabPane, ElTable, ElTableColumn, ElTabs } from 'element-plus'
+
 /**
  * @component DocxTocImageEditor
  * @description DOCX 目录域（API.md 4.11）与内嵌图片（4.8）编辑。
@@ -17,6 +38,7 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { docxApi } from '@/api/docx'
+import { useRequestGuard } from '@/composables/useRequestGuard'
 import { ApiError } from '@/api/http'
 import type {
   DocBlock,
@@ -35,6 +57,8 @@ const props = defineProps<{
   fileId: number | null
   versionNo: number | null
 }>()
+
+const requestGuard = useRequestGuard(() => [props.modelValue, props.fileId, props.versionNo])
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
@@ -85,27 +109,43 @@ function close(): void {
 
 /** 加载结构与目录状态 */
 async function load(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  const isCurrent = requestGuard('load')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   loading.value = true
   error.value = ''
   toc.value = null
+  hfLinks.value = null
+  footnotes.value = null
   structure.value = null
   try {
-    structure.value = await docxApi.getStructure(props.fileId, props.versionNo)
-    toc.value = await docxApi.getTableOfContents(props.fileId, props.versionNo)
+    const structureResponse = await docxApi.getStructure(fileId, versionNo)
+    if (!isCurrent()) return
+    structure.value = structureResponse
+    const tocResponse = await docxApi.getTableOfContents(fileId, versionNo)
+    if (!isCurrent()) return
+    toc.value = tocResponse
     // 页眉页脚与脚注都是只读查询，失败不应阻断整个对话框
-    hfLinks.value = await docxApi.getHeaderFooterLinks(props.fileId, props.versionNo).catch(() => null)
-    footnotes.value = await docxApi.getFootnotes(props.fileId, props.versionNo).catch(() => null)
+    const hfLinksResponse = await docxApi.getHeaderFooterLinks(fileId, versionNo).catch(() => null)
+    if (!isCurrent()) return
+    hfLinks.value = hfLinksResponse
+    const footnotesResponse = await docxApi.getFootnotes(fileId, versionNo).catch(() => null)
+    if (!isCurrent()) return
+    footnotes.value = footnotesResponse
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '加载失败'
   } finally {
-    loading.value = false
+    if (isCurrent()) loading.value = false
   }
 }
 
 watch(
   () => [props.modelValue, props.fileId, props.versionNo] as const,
   ([visible]) => {
+    submitting.value = false
     if (!visible) return
     tab.value = 'toc'
     tocPosition.value = 'END'
@@ -115,26 +155,34 @@ watch(
     images.value = []
     void load()
   },
+  { flush: 'sync' },
 )
 
 /** 插入或刷新目录域 */
 async function submitToc(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  if (submitting.value) return
+  const isCurrent = requestGuard('submitToc')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   submitting.value = true
   try {
-    const version = await docxApi.createTableOfContents(props.fileId, props.versionNo, {
+    const version = await docxApi.createTableOfContents(fileId, versionNo, {
       position: tocPosition.value,
       maxLevel: tocMaxLevel.value,
       hyperlinks: tocHyperlinks.value,
       title: tocTitle.value.trim() || undefined,
     })
+    if (!isCurrent()) return
     ElMessage.success('已创建新版本（目录页码需在 Word 中更新）')
     emit('edited', version)
     close()
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '目录操作失败'
   } finally {
-    submitting.value = false
+    if (isCurrent()) submitting.value = false
   }
 }
 
@@ -159,7 +207,12 @@ function removeImage(index: number): void {
 
 /** 提交图片插入 */
 async function submitImages(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  if (submitting.value) return
+  const isCurrent = requestGuard('submitImages')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   if (!images.value.length) {
     ElMessage.warning('还没有添加图片')
     return
@@ -173,22 +226,29 @@ async function submitImages(): Promise<void> {
   }
   submitting.value = true
   try {
-    const version = await docxApi.insertInlineImages(props.fileId, props.versionNo, {
+    const version = await docxApi.insertInlineImages(fileId, versionNo, {
       operations: images.value,
     })
+    if (!isCurrent()) return
     ElMessage.success('已创建新版本')
     emit('edited', version)
     close()
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '插入图片失败'
   } finally {
-    submitting.value = false
+    if (isCurrent()) submitting.value = false
   }
 }
 
 /** 提交页眉页脚链接设置 */
 async function submitHf(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  if (submitting.value) return
+  const isCurrent = requestGuard('submitHf')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   // 取消链接时后端要求给 text；重新链接时必须不传
   if (!hfLinked.value && !hfText.value.trim()) {
     ElMessage.warning('取消链接需要填写页眉页脚文本')
@@ -196,26 +256,33 @@ async function submitHf(): Promise<void> {
   }
   submitting.value = true
   try {
-    const version = await docxApi.updateHeaderFooterLink(props.fileId, props.versionNo, {
+    const version = await docxApi.updateHeaderFooterLink(fileId, versionNo, {
       sectionNo: hfSectionNo.value,
       location: hfLocation.value,
       type: hfType.value,
       linkedToPrevious: hfLinked.value,
       text: hfLinked.value ? undefined : hfText.value,
     })
+    if (!isCurrent()) return
     ElMessage.success('已创建新版本')
     emit('edited', version)
     close()
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '页眉页脚设置失败'
   } finally {
-    submitting.value = false
+    if (isCurrent()) submitting.value = false
   }
 }
 
 /** 提交脚注操作 */
 async function submitFootnote(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  if (submitting.value) return
+  const isCurrent = requestGuard('submitFootnote')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   const op: DocxFootnoteEditOperation = { type: fnType.value }
   if (fnType.value === 'ADD') {
     if (!fnTargetBlockId.value) {
@@ -244,14 +311,16 @@ async function submitFootnote(): Promise<void> {
   }
   submitting.value = true
   try {
-    const version = await docxApi.editFootnotes(props.fileId, props.versionNo, { operations: [op] })
+    const version = await docxApi.editFootnotes(fileId, versionNo, { operations: [op] })
+    if (!isCurrent()) return
     ElMessage.success('已创建新版本')
     emit('edited', version)
     close()
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '脚注操作失败'
   } finally {
-    submitting.value = false
+    if (isCurrent()) submitting.value = false
   }
 }
 

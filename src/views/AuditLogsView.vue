@@ -1,4 +1,23 @@
 <script setup lang="ts">
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-button.css'
+import 'element-plus/theme-chalk/el-checkbox.css'
+import 'element-plus/theme-chalk/el-popper.css'
+import 'element-plus/theme-chalk/el-input.css'
+import 'element-plus/theme-chalk/el-scrollbar.css'
+import 'element-plus/theme-chalk/el-date-picker-panel.css'
+import 'element-plus/theme-chalk/el-date-picker.css'
+import 'element-plus/theme-chalk/el-option.css'
+import 'element-plus/theme-chalk/el-tag.css'
+import 'element-plus/theme-chalk/el-option-group.css'
+import 'element-plus/theme-chalk/el-select.css'
+import 'element-plus/theme-chalk/el-pagination.css'
+import 'element-plus/theme-chalk/el-tooltip.css'
+import 'element-plus/theme-chalk/el-table.css'
+import 'element-plus/theme-chalk/el-table-column.css'
+
+import { ElButton, ElCheckbox, ElDatePicker, ElInput, ElOption, ElPagination, ElSelect, ElTable, ElTableColumn, ElTag } from 'element-plus'
+
 /**
  * @component AuditLogsView
  * @description 审计日志查询与正式存储回收（API.md 7.15 / 7.14）。
@@ -13,11 +32,14 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminAuditApi, adminStorageApi } from '@/api/admin-content'
+import { useRequestGuard } from '@/composables/useRequestGuard'
 import { ApiError } from '@/api/http'
 import { formatDateTime } from '@/utils/format'
 import type { AuditLog, AuditQueryParams, StorageRecycleReport } from '@/api/types'
 
 /** 列表数据 */
+const timeRange = ref<[string, string] | null>(null)
+const requestGuard = useRequestGuard(() => null)
 const rows = ref<AuditLog[]>([])
 /** 总数 */
 const total = ref(0)
@@ -60,24 +82,28 @@ function buildParams(): AuditQueryParams {
     targetType: query.targetType?.trim() || undefined,
     targetId: query.targetId?.trim() || undefined,
     result: query.result ?? undefined,
-    from: query.from?.trim() || undefined,
-    to: query.to?.trim() || undefined,
+    from: timeRange.value?.[0] || undefined,
+    to: timeRange.value?.[1] || undefined,
     requestId: query.requestId?.trim() || undefined,
   }
 }
 
 /** 加载一页 */
 async function load(): Promise<void> {
-  loading.value = true
+  const isCurrent = requestGuard()
+  const params = buildParams()
   error.value = ''
+  if (params.from && params.to && params.from > params.to) { error.value = '结束时间不能早于起始时间'; loading.value = false; return }
+  loading.value = true
   try {
-    const page = await adminAuditApi.list(buildParams())
+    const page = await adminAuditApi.list(params)
+    if (!isCurrent()) return
     rows.value = page.records
     total.value = page.total
   } catch (e) {
-    error.value = e instanceof ApiError ? e.message : '审计日志加载失败'
+    if (isCurrent()) error.value = e instanceof ApiError ? e.message : '审计日志加载失败'
   } finally {
-    loading.value = false
+    if (isCurrent()) loading.value = false
   }
 }
 
@@ -95,6 +121,7 @@ function reset(): void {
   query.targetType = ''
   query.targetId = ''
   query.result = undefined
+  timeRange.value = null
   query.from = ''
   query.to = ''
   query.requestId = ''
@@ -164,6 +191,8 @@ onMounted(load)
         <el-option label="FAILURE" value="FAILURE" />
       </el-select>
       <el-input v-model="query.requestId" placeholder="请求 ID" class="audit__w-md" clearable />
+      <el-date-picker v-model="timeRange" type="datetimerange" value-format="YYYY-MM-DDTHH:mm:ss"
+        start-placeholder="起始时间（含）" end-placeholder="结束时间（含）" range-separator="至" clearable />
       <el-button type="primary" size="small" :loading="loading" @click="search">查询</el-button>
       <el-button size="small" @click="reset">重置</el-button>
     </div>

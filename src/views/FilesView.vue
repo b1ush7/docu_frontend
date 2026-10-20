@@ -137,6 +137,30 @@
 </template>
 
 <script setup>
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-alert.css'
+import 'element-plus/theme-chalk/el-button.css'
+import 'element-plus/theme-chalk/el-descriptions-item.css'
+import 'element-plus/theme-chalk/el-descriptions.css'
+import 'element-plus/theme-chalk/el-overlay.css'
+import 'element-plus/theme-chalk/el-dialog.css'
+import 'element-plus/theme-chalk/el-form.css'
+import 'element-plus/theme-chalk/el-form-item.css'
+import 'element-plus/theme-chalk/el-input.css'
+import 'element-plus/theme-chalk/el-option.css'
+import 'element-plus/theme-chalk/el-scrollbar.css'
+import 'element-plus/theme-chalk/el-popper.css'
+import 'element-plus/theme-chalk/el-tag.css'
+import 'element-plus/theme-chalk/el-option-group.css'
+import 'element-plus/theme-chalk/el-select.css'
+import 'element-plus/theme-chalk/el-pagination.css'
+import 'element-plus/theme-chalk/el-tooltip.css'
+import 'element-plus/theme-chalk/el-checkbox.css'
+import 'element-plus/theme-chalk/el-table.css'
+import 'element-plus/theme-chalk/el-table-column.css'
+
+import { ElAlert, ElButton, ElDescriptions, ElDescriptionsItem, ElDialog, ElForm, ElFormItem, ElInput, ElOption, ElPagination, ElSelect, ElTable, ElTableColumn, ElTag } from 'element-plus'
+
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'

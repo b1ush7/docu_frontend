@@ -1,4 +1,20 @@
 <script setup lang="ts">
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-button.css'
+import 'element-plus/theme-chalk/el-checkbox.css'
+import 'element-plus/theme-chalk/el-overlay.css'
+import 'element-plus/theme-chalk/el-dialog.css'
+import 'element-plus/theme-chalk/el-input.css'
+import 'element-plus/theme-chalk/el-input-number.css'
+import 'element-plus/theme-chalk/el-option.css'
+import 'element-plus/theme-chalk/el-scrollbar.css'
+import 'element-plus/theme-chalk/el-popper.css'
+import 'element-plus/theme-chalk/el-tag.css'
+import 'element-plus/theme-chalk/el-option-group.css'
+import 'element-plus/theme-chalk/el-select.css'
+
+import { ElButton, ElCheckbox, ElDialog, ElInput, ElInputNumber, ElOption, ElSelect } from 'element-plus'
+
 /**
  * @component DocxTableEditor
  * @description DOCX 表格人工编辑（API.md 4.6）。
@@ -21,6 +37,7 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { docxApi } from '@/api/docx'
+import { useRequestGuard } from '@/composables/useRequestGuard'
 import { ApiError } from '@/api/http'
 import type { DocBlock, DocxStructure, DocxTableEditOperation, Version } from '@/api/types'
 
@@ -29,6 +46,8 @@ const props = defineProps<{
   fileId: number | null
   versionNo: number | null
 }>()
+
+const requestGuard = useRequestGuard(() => [props.modelValue, props.fileId, props.versionNo])
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
@@ -86,28 +105,38 @@ function close(): void {
 }
 
 async function loadStructure(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  const isCurrent = requestGuard('loadStructure')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   loading.value = true
   error.value = ''
   try {
-    structure.value = await docxApi.getStructure(props.fileId, props.versionNo)
+    const structureResponse = await docxApi.getStructure(fileId, versionNo)
+    if (!isCurrent()) return
+    structure.value = structureResponse
     tableId.value = structure.value.blocks.find((b) => b.type === 'TABLE')?.blockId ?? ''
     operations.value = []
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '结构加载失败'
   } finally {
-    loading.value = false
+    if (isCurrent()) loading.value = false
   }
 }
 
 watch(
   () => [props.modelValue, props.fileId, props.versionNo] as const,
   ([visible]) => {
+    submitting.value = false
+    loading.value = false
     if (!visible) return
     structure.value = null
     operations.value = []
     void loadStructure()
   },
+  { flush: 'sync' },
 )
 
 /** 新增一个操作：按类型给出合理默认值 */
@@ -170,7 +199,12 @@ function validate(): string | null {
 }
 
 async function submit(): Promise<void> {
-  if (props.fileId === null || props.versionNo === null) return
+  if (submitting.value) return
+  const isCurrent = requestGuard('submit')
+  const fileId = props.fileId
+  const versionNo = props.versionNo
+
+  if (fileId === null || versionNo === null) return
   const invalid = validate()
   if (invalid) {
     ElMessage.warning(invalid)
@@ -178,16 +212,18 @@ async function submit(): Promise<void> {
   }
   submitting.value = true
   try {
-    const version = await docxApi.editTable(props.fileId, props.versionNo, {
+    const version = await docxApi.editTable(fileId, versionNo, {
       operations: operations.value,
     })
+    if (!isCurrent()) return
     ElMessage.success('已创建新版本')
     emit('edited', version)
     close()
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof ApiError ? e.message : '提交失败'
   } finally {
-    submitting.value = false
+    if (isCurrent()) submitting.value = false
   }
 }
 

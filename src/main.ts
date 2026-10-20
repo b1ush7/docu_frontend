@@ -1,3 +1,13 @@
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-loading.css'
+import 'element-plus/theme-chalk/el-badge.css'
+import 'element-plus/theme-chalk/el-message.css'
+import 'element-plus/theme-chalk/el-input.css'
+import 'element-plus/theme-chalk/el-button.css'
+import 'element-plus/theme-chalk/el-overlay.css'
+import 'element-plus/theme-chalk/el-message-box.css'
+import 'element-plus/theme-chalk/el-progress.css'
+import 'element-plus/theme-chalk/el-notification.css'
 /**
  * @file 应用入口
  * @description 创建并挂载 Vue 应用：注册 Pinia 与 Vue Router，引入思源宋体与全局样式。
@@ -7,24 +17,15 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 
-// 思源宋体（Noto Serif SC）：400 正文 / 500 标题品牌名 / 600 极少数强调
-// 次要说明仍用 400，靠颜色变浅区分，不使用更细字重
+// Preserve Unicode subsetting; headings use synthesized weight instead of loading four extra font sets.
 import '@fontsource/noto-serif-sc/400.css'
-import '@fontsource/noto-serif-sc/500.css'
-import '@fontsource/noto-serif-sc/600.css'
-
-// 思源黑体（Noto Sans SC）：与宋体同字重，供 variables.scss 切换预览时使用
 import '@fontsource/noto-sans-sc/400.css'
-import '@fontsource/noto-sans-sc/500.css'
-import '@fontsource/noto-sans-sc/600.css'
 
 import App from './App.vue'
 import router from './router'
 
 // 管理端（/admin/**）基于 Element Plus；登录注册页为手写组件，两者共存
-import ElementPlus from 'element-plus'
-import zhCn from 'element-plus/es/locale/lang/zh-cn'
-import 'element-plus/dist/index.css'
+import { ElLoading } from 'element-plus'
 import './styles/global.scss'
 import './style.css'
 import { watchTokenCleared } from './utils/token'
@@ -33,7 +34,7 @@ const app = createApp(App)
 
 app.use(createPinia())
 app.use(router)
-app.use(ElementPlus, { locale: zhCn })
+app.directive('loading', ElLoading.directive)
 
 // 跨标签页同步：其他标签页退出登录后，本页跳登录（401 兜底由 router 注册）
 watchTokenCleared(() => {

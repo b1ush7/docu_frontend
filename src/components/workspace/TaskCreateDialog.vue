@@ -1,4 +1,21 @@
 <script setup lang="ts">
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-button.css'
+import 'element-plus/theme-chalk/el-overlay.css'
+import 'element-plus/theme-chalk/el-dialog.css'
+import 'element-plus/theme-chalk/el-form.css'
+import 'element-plus/theme-chalk/el-form-item.css'
+import 'element-plus/theme-chalk/el-option.css'
+import 'element-plus/theme-chalk/el-radio.css'
+import 'element-plus/theme-chalk/el-radio-group.css'
+import 'element-plus/theme-chalk/el-scrollbar.css'
+import 'element-plus/theme-chalk/el-popper.css'
+import 'element-plus/theme-chalk/el-tag.css'
+import 'element-plus/theme-chalk/el-option-group.css'
+import 'element-plus/theme-chalk/el-select.css'
+
+import { ElButton, ElDialog, ElForm, ElFormItem, ElOption, ElRadio, ElRadioGroup, ElSelect } from 'element-plus'
+
 import { watch } from 'vue'
 import { useTaskCreation } from '@/composables/useTaskCreation'
 import type { Task } from '@/api/types'

@@ -329,4 +329,10 @@ function onResizeEnd(): void {
   min-width: 0;
   overflow-y: auto;
 }
+@media (max-width: 768px) {
+  .workspace-layout { flex-direction: column; height: auto; min-height: 100dvh; }
+  .workspace-layout__sidebar { width: 100% !important; max-height: 42dvh; min-height: 220px; border-right: 0; border-bottom: 1px solid $line; }
+  .workspace-layout__resizer { display: none; }
+  .workspace-layout__main { min-height: 58dvh; overflow: visible; }
+}
 </style>

@@ -1,4 +1,15 @@
 <script setup lang="ts">
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-button.css'
+import 'element-plus/theme-chalk/el-scrollbar.css'
+import 'element-plus/theme-chalk/el-popper.css'
+import 'element-plus/theme-chalk/el-button-group.css'
+import 'element-plus/theme-chalk/el-dropdown.css'
+import 'element-plus/theme-chalk/el-dropdown-item.css'
+import 'element-plus/theme-chalk/el-dropdown-menu.css'
+
+import { ElButton, ElDropdown, ElDropdownItem, ElDropdownMenu } from 'element-plus'
+
 /**
  * @component WorkspaceView
  * @description 用户主工作台页面：组装 WorkspaceLayout 布局外壳，
@@ -9,7 +20,7 @@
  */
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { logout as apiLogout } from '@/api/auth'
 import { clearTokens } from '@/utils/token'
 import WorkspaceLayout from '@/components/workspace/WorkspaceLayout.vue'
@@ -30,6 +41,7 @@ import DocxParagraphEditor from '@/components/workspace/DocxParagraphEditor.vue'
 import DocxFormatEditor from '@/components/workspace/DocxFormatEditor.vue'
 import DocxTableEditor from '@/components/workspace/DocxTableEditor.vue'
 import DocxTocImageEditor from '@/components/workspace/DocxTocImageEditor.vue'
+import { useUserStore } from '@/stores/user'
 import { useCurrentUser } from '@/composables/useCurrentUser'
 import { usePreviewFlow } from '@/composables/usePreviewFlow'
 import { previewApi } from '@/api/preview'
@@ -38,6 +50,8 @@ import { saveBlob, versionFileName } from '@/utils/download'
 import { ApiError } from '@/api/http'
 import type { FileAsset, Task, Version } from '@/api/types'
 
+const account = useUserStore()
+const userActionLoading = ref(false)
 const router = useRouter()
 const route = useRoute()
 const selectedFile = ref<FileAsset | null>(null)
@@ -62,8 +76,8 @@ const docxTocImageVisible = ref(false)
 const navigationLoading = ref(false)
 const downloading = ref(false)
 const displayedSessionId = ref<number | null>(null)
-function routeContext(context: { file?: number; version?: number; aiSession?: number; reply?: number } = {}): void {
-  void router.replace({ query: { ...route.query, file: undefined, version: undefined, aiSession: undefined, reply: undefined, ...context } }).catch(() => {})
+async function routeContext(context: { file?: number; version?: number; aiSession?: number; reply?: number } = {}): Promise<void> {
+  await router.replace({ query: { ...route.query, file: undefined, version: undefined, aiSession: undefined, reply: undefined, ...context } }).catch(() => {})
 }
 function positiveId(value: unknown): number | null {
   if (typeof value !== 'string' || !/^[1-9]\d*$/.test(value)) return null
@@ -91,6 +105,20 @@ const avatarChar = computed(() =>
  * 否则网络异常时用户无法退出登录。
  */
 async function onUserCommand(command: string): Promise<void> {
+  if (userActionLoading.value) return
+  if (command === 'admin' && user.value?.role === 'ADMIN') {
+    await router.push('/admin')
+    return
+  }
+  if (command === 'logoutAll') {
+    try { await ElMessageBox.confirm('将退出除当前设备外的全部登录会话，确认继续？', '退出全部其他设备', { type: 'warning' }) }
+    catch { return }
+    userActionLoading.value = true
+    try { const count = await account.logoutAll(); ElMessage.success(`已退出其他 ${count} 台设备`) }
+    catch (cause) { ElMessage.error(cause instanceof Error ? cause.message : '退出其他设备失败，请重试') }
+    finally { userActionLoading.value = false }
+    return
+  }
   if (command === 'password') {
     router.push('/change-password')
     return
@@ -147,15 +175,7 @@ const previewFlow = usePreviewFlow({
  * @param file 被选中的文件资产
  */
 async function onFileSelect(file: FileAsset): Promise<void> {
-  if (previewFlow.busy.value || navigationLoading.value) return
-  selectedFile.value = file
-  currentFileId.value = file.id
-  // 文件切换后原选中任务大概率不属于新文件，重置任务选中态
-  currentTaskId.value = null
-  displayedSessionId.value = null
-  routeContext({ file: file.id, version: file.latestVersion })
-  await previewFlow.openVersion(file.id, file.latestVersion)
-  // 任务列表随 currentFileId 变化自动重新拉取（组件内 watch）
+  await onVersionPreview(file, { versionNo: file.latestVersion })
 }
 
 /**
@@ -199,15 +219,18 @@ function onViewVersions(file: FileAsset): void {
   historyVisible.value = true
 }
 
-async function onVersionPreview(file: FileAsset, version: Version): Promise<void> {
+async function onVersionPreview(file: FileAsset, version: Pick<Version, 'versionNo'>): Promise<void> {
   if (previewFlow.busy.value || navigationLoading.value) return
-  selectedFile.value = file
-  currentFileId.value = file.id
-  currentTaskId.value = null
-  displayedSessionId.value = null
-  historyVisible.value = false
-  routeContext({ file: file.id, version: version.versionNo })
-  await previewFlow.openVersion(file.id, version.versionNo)
+  navigationLoading.value = true
+  try {
+    selectedFile.value = file
+    currentFileId.value = file.id
+    currentTaskId.value = null
+    displayedSessionId.value = null
+    historyVisible.value = false
+    await routeContext({ file: file.id, version: version.versionNo })
+    await previewFlow.openVersion(file.id, version.versionNo)
+  } finally { navigationLoading.value = false }
 }
 async function onVersionRestored(file: FileAsset, version: Version): Promise<void> {
   fileListRef.value?.refresh()
@@ -273,21 +296,28 @@ function onTaskCreated(task: Task): void {
  * 模板生成成功：刷新文件列表并选中新文件。
  * 生成的是**新文件**（不是既有文件的新版本），所以这里按文件而不是按任务处理。
  */
-function onTemplateCreated(file: FileAsset): void {
+async function onTemplateCreated(file: FileAsset): Promise<void> {
   fileListRef.value?.refresh()
-  selectedFile.value = file
-  currentFileId.value = file.id
+  await onVersionPreview(file, { versionNo: file.latestVersion })
 }
 
-/**
- * 人工编辑成功（图片编辑 / DOCX 段落编辑）：刷新文件列表并切到新版本预览。
- * 这类编辑都会创建一个新版本，必须显式跳转，否则看到的还是编辑前的内容。
- */
+/** Open the exact saved version and persist it in the URL for reloads. */
 async function onVersionCreated(version: Version): Promise<void> {
-  fileListRef.value?.refresh()
   const current = previewFlow.previewVersion.value
-  if (!current) return
-  await previewFlow.openVersion(current.fileId, version.versionNo)
+  if (!current || previewFlow.busy.value || navigationLoading.value) return
+  navigationLoading.value = true
+  const fileId = current.fileId
+  try {
+    const file = await fileApi.detail(fileId)
+    selectedFile.value = file
+    currentFileId.value = fileId
+    currentTaskId.value = null
+    displayedSessionId.value = null
+    await routeContext({ file: fileId, version: version.versionNo })
+    await previewFlow.openVersion(fileId, version.versionNo)
+    fileListRef.value?.refresh()
+  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '打开编辑结果失败，请刷新文件列表') }
+  finally { navigationLoading.value = false }
 }
 async function onTaskResult(task: Task): Promise<void> {
   if (task.status !== 'SUCCEEDED' || task.fileId === null || task.outputVersion === null || previewFlow.busy.value || navigationLoading.value) return
@@ -298,7 +328,7 @@ async function onTaskResult(task: Task): Promise<void> {
     selectedFile.value = file
     currentFileId.value = file.id
     displayedSessionId.value = null
-    routeContext({ file: file.id, version: version.versionNo })
+    await routeContext({ file: file.id, version: version.versionNo })
     await previewFlow.openVersion(file.id, version.versionNo)
     currentTaskId.value = task.id
     fileListRef.value?.refresh()
@@ -425,6 +455,8 @@ async function onExportPdf(): Promise<void> {
           </span>
           <template #dropdown>
             <el-dropdown-menu>
+              <el-dropdown-item v-if="user?.role === 'ADMIN'" command="admin">管理后台</el-dropdown-item>
+              <el-dropdown-item command="logoutAll" :disabled="userActionLoading">退出全部其他设备</el-dropdown-item>
               <el-dropdown-item command="password">修改密码</el-dropdown-item>
               <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
             </el-dropdown-menu>
@@ -590,5 +622,10 @@ async function onExportPdf(): Promise<void> {
   display: flex;
   flex-direction: column;
   padding: 0 $card-padding;
+}
+@media (max-width: 768px) {
+  .main-area { height: auto; min-height: 58dvh; }
+  .main-area__toolbar { padding: 8px; }
+  .main-area__body { padding: 12px; }
 }
 </style>
